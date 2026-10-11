@@ -85,7 +85,13 @@ jobs:
           archive="snapshot/$snapshot_tar"
           checksum="snapshot/$snapshot_sum"
           (cd snapshot && sha512sum -c "$(basename "$checksum")")
-          base_name=$(tar -tJf "$archive" | head -n1 | cut -d/ -f1)
+          # Full listing to a file first: piping tar into head -n1 makes tar
+          # die on SIGPIPE (write error) under set -o pipefail.
+          tar -tJf "$archive" > snapshot/listing.txt
+          base_name=$(head -n1 snapshot/listing.txt | cut -d/ -f1)
+          if [[ -z "$base_name" ]]; then
+            echo "The snapshot archive carries no top-level directory." >&2; exit 1
+          fi
           echo "base_name=$base_name" >> "$GITHUB_ENV"
           echo "archive=$archive" >> "$GITHUB_ENV"
           # Upstream Proton describe style: Wine version, build date, this
