@@ -114,10 +114,14 @@ jobs:
           git -C wine-src remote add origin https://github.com/xodus-gaming/wine.git
           git -C wine-src fetch --depth 1 origin "$WINE_COMMIT"
           git -C wine-src checkout --detach FETCH_HEAD
-          # include/wine/vulkan.h is generated, not tracked; makedep fails at
-          # config.status time without it. The generator runs in its own
-          # directory, so the XML paths are relative to dlls/winevulkan/.
+          # The tree does not track its generated files: include/wine/vulkan.h
+          # (dlls/winevulkan/make_vulkan) and the syscall tables
+          # dlls/ntdll/ntsyscalls.h + dlls/win32u/win32syscalls.h
+          # (tools/make_specfiles). makedep runs from config.status and fails
+          # without them. make_vulkan runs in its own directory, so the XML
+          # paths are relative to dlls/winevulkan/.
           (cd wine-src/dlls/winevulkan && python3 make_vulkan -x vk.xml -X video.xml)
+          (cd wine-src && perl tools/make_specfiles)
           cd wine-src && autoreconf -fiv
 
       - name: Build the patched xgameruntime DLL
