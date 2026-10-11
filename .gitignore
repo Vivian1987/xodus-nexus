@@ -1,0 +1,23 @@
+node_modules/
+dist/
+dist-electron/
+release/
+work/
+outputs/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+.agents/
+.aws/
+.codex/
+*.AppImage
+*.dll
+*.msixvc
+*.wgs
+# Internal engineering handoffs and diagnostics (XUIDs, private paths)
+docs/internal/
+*.backup-*
+*.tmp*
