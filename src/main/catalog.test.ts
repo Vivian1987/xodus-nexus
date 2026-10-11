@@ -58,6 +58,11 @@ describe('Microsoft Store catalog parsing', () => {
     expect(products[0].posterUrl).toBeUndefined();
   });
 
+  it('prefers branded box art over textless poster art', () => {
+    const products = parseCatalogProducts({ productsList: [{ ...search.productsList[0], boxArtUrl: 'https://store-images.s-microsoft.com/image/boxart' }] }, catalog);
+    expect(products[0].posterUrl).toBe('https://store-images.s-microsoft.com/image/boxart');
+  });
+
   it('resolves a Store edition to its single primary bundled MSIXVC product', () => {
     const products = parseCatalogProducts({ productsList: [{ productId: '9edition', title: 'Game Standard Edition', isGame: true }] }, {
       Products: [{
@@ -131,5 +136,29 @@ describe('CatalogService', () => {
     expect(result.hasMore).toBe(false);
     expect(urls[0]).toContain('GetComputedProductsList');
     expect(urls[0]).toContain('mediaType=Games');
+  });
+
+  it('looks up Store cover artwork by Product ID, preferring square box art, and rejects foreign hosts', async () => {
+    const fetcher = (async (input: URL | RequestInfo) => {
+      const url = String(input);
+      return new Response(JSON.stringify(url.includes('displaycatalog') ? {
+        Products: [{
+          ProductId: '9GAME123',
+          LocalizedProperties: [{ Images: [
+            { ImagePurpose: 'Logo', Uri: '//store-images.s-microsoft.com/image/logo' },
+            { ImagePurpose: 'FeaturePromotionalSquareArt', Uri: '//store-images.s-microsoft.com/image/promo' },
+            { ImagePurpose: 'BoxArt', Uri: '//store-images.s-microsoft.com/image/boxart' },
+          ] }],
+        }, {
+          ProductId: '9FOREIGN',
+          LocalizedProperties: [{ Images: [
+            { ImagePurpose: 'BoxArt', Uri: '//tracker.example.com/image/boxart' },
+          ] }],
+        }],
+      } : search), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+    const posters = await new CatalogService(fetcher).posters(['9game123', '9foreign', 'bad id'], 'US');
+    expect(posters.get('9GAME123')).toBe('https://store-images.s-microsoft.com/image/boxart');
+    expect(posters.has('9FOREIGN')).toBe(false);
   });
 });

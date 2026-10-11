@@ -2,6 +2,20 @@ import type { BackendCapabilities } from './types.js';
 
 const COMMAND_LINE = /^[ \t]{2}([a-z][a-z0-9-]+)[ \t]{2,}/gm;
 
+// Loose semver comparison ("v1.2.3-rc" style tags included): true when the
+// candidate version is strictly newer than the current one.
+export function isNewerVersion(candidate: string | undefined, current: string): boolean {
+  if (!candidate) return false;
+  const parse = (value: string) => value.trim().replace(/^v/i, '').split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const left = parse(candidate);
+  const right = parse(current);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return false;
+}
+
 export function parseBackendHelp(help: string): BackendCapabilities {
   const commands = [...help.matchAll(COMMAND_LINE)].map((match) => match[1]);
   const version = help.match(/xodus-cli\s+([\w.+-]+)/i)?.[1];
@@ -58,4 +72,29 @@ export function safeProductId(value: string): string {
     throw new Error('Enter a valid Store/Product ID (6–40 characters: A–Z, 0–9, or a hyphen).');
   }
   return normalized;
+}
+
+// Estimated time remaining for a download, derived from the transfer rate
+// Xodus reports (for example "86.4 MiB/s") and the byte counters.
+export function estimateTimeRemaining(transferRate: string | undefined, downloadedBytes: number | null | undefined, totalBytes: number | null | undefined): string | undefined {
+  if (!transferRate || downloadedBytes == null || totalBytes == null) return undefined;
+  const remaining = totalBytes - downloadedBytes;
+  if (remaining <= 0) return undefined;
+  const match = transferRate.trim().match(/^([\d.]+)\s*(KiB|MiB|GiB|TiB|KB|MB|GB|TB|B)\/s$/i);
+  if (!match) return undefined;
+  const binary: Record<string, number> = { b: 1, kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3, tib: 1024 ** 4 };
+  const decimal: Record<string, number> = { b: 1, kb: 1000, mb: 1000 ** 2, gb: 1000 ** 3, tb: 1000 ** 4 };
+  const unit = match[2].toLowerCase();
+  const multiplier = binary[unit] ?? decimal[unit];
+  const bytesPerSecond = Number(match[1]) * multiplier;
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return undefined;
+  const seconds = remaining / bytesPerSecond;
+  if (!Number.isFinite(seconds)) return undefined;
+  const rounded = Math.round(seconds);
+  if (rounded < 60) return `~${rounded}s left`;
+  const minutes = Math.round(rounded / 60);
+  if (minutes < 60) return `~${minutes}m left`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `~${hours}h ${minutes % 60}m left`;
+  return `~${Math.floor(hours / 24)}d ${hours % 24}h left`;
 }

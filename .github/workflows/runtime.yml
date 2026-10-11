@@ -1,0 +1,140 @@
+name: Nexus runtime build
+
+# Builds the Xodus Nexus runtime: the official Xodus Proton snapshot with our
+# patched xgameruntime DLL (PR #28 + tcp-bridge + async lifetime + xuser
+# contract + package locale), packaged as a release asset the launcher can
+# download without any local compilation. This is what normal users install.
+#
+# Versioning follows the upstream Proton snapshot convention
+# (<wine>-<yyyymmdd>-g<shortsha>): the Wine version of the base snapshot, the
+# build date, and the short sha of this repository's commit (our patch state).
+#
+# Trigger: workflow_dispatch. First runs keep publish=false (CI artifact only);
+# a maintainer run with publish=true creates the GitHub release the launcher
+# downloads.
+#
+# NOTE: first run needs verification. The DLL build mirrors
+# scripts/build-cloud-save-preview.sh --xuser-contract, and the base snapshot
+# is pulled from xodus-gaming/Proton's public Actions artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub release (false = CI artifact only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  WINE_COMMIT: b1dd32734a34472a28eb5be9922df06e07ac0834
+  XGAMERUNTIME_PR_COMMIT: 3fd4ae1091339ef07d6f2d53fda8e15541f96ad3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-mingw-w64-x86-64 flex bison autoconf rsync file \
+            gh tar xz-utils
+
+      - name: Resolve the latest official Xodus Proton snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          commit=$(git ls-remote https://github.com/xodus-gaming/Proton.git refs/heads/xodus/bleeding-edge | cut -f1)
+          echo "proton_commit=$commit" >> "$GITHUB_ENV"
+          run_id=$(gh api --method GET repos/xodus-gaming/Proton/actions/runs \
+            -f branch=xodus/bleeding-edge -f status=success -f per_page=20 \
+            --jq ".workflow_runs[] | select(.head_sha == \"$commit\") | .id" | head -n1)
+          if [[ -z "$run_id" ]]; then
+            echo "No successful snapshot run for $commit." >&2; exit 1
+          fi
+          echo "snapshot_run_id=$run_id" >> "$GITHUB_ENV"
+
+      - name: Download the official snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot
+          gh run download "$snapshot_run_id" --repo xodus-gaming/Proton \
+            --name '*-x86_64.tar.xz' --dir snapshot
+          gh run download "$snapshot_run_id" --repo xodus-gaming/Proton \
+            --name '*-x86_64.sha512sum' --dir snapshot
+          archive=$(find snapshot -name '*-x86_64.tar.xz' | head -n1)
+          checksum=$(find snapshot -name '*-x86_64.sha512sum' | head -n1)
+          (cd snapshot && sha512sum -c "$(basename "$checksum")")
+          base_name=$(tar -tJf "$archive" | head -n1 | cut -d/ -f1)
+          echo "base_name=$base_name" >> "$GITHUB_ENV"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+          # Upstream Proton describe style: Wine version, build date, this
+          # repository's short sha (our patch state).
+          wine_version="${base_name#proton-xodus-bleeding-edge-}"
+          wine_version="${wine_version%%-*}"
+          version="${wine_version}-$(date -u +%Y%m%d)-g${GITHUB_SHA:0:8}"
+          echo "nexus_version=$version" >> "$GITHUB_ENV"
+          echo "nexus_name=xodus-nexus-runtime-$version" >> "$GITHUB_ENV"
+          tar -xJf "$archive" -C snapshot
+          echo "Snapshot base: $base_name"
+
+      - name: Prepare the pinned Wine source tree
+        run: |
+          set -euo pipefail
+          git init wine-src
+          git -C wine-src remote add origin https://github.com/xodus-gaming/wine.git
+          git -C wine-src fetch --depth 1 origin "$WINE_COMMIT"
+          git -C wine-src checkout --detach FETCH_HEAD
+          cd wine-src && autoreconf -fiv
+
+      - name: Build the patched xgameruntime DLL
+        run: |
+          set -euo pipefail
+          scripts/build-cloud-save-preview.sh "$PWD/wine-src" "$PWD/xgrt-work" --xuser-contract
+          built="$PWD/xgrt-work/build/dlls/xgameruntime/x86_64-windows/xgameruntime.dll"
+          test -f "$built"
+          echo "built_dll=$built" >> "$GITHUB_ENV"
+
+      - name: Assemble the Nexus runtime release
+        run: |
+          set -euo pipefail
+          base_dir="snapshot/$base_name"
+          test -x "$base_dir/files/bin/wine"
+          test -f "$base_dir/files/lib/wine/x86_64-windows/xgameruntime.dll"
+          # Replace only the runtime DLL; the rest of the snapshot is untouched.
+          install -m 0644 "$built_dll" "$base_dir/files/lib/wine/x86_64-windows/xgameruntime.dll"
+          mv "snapshot/$base_name" "snapshot/$nexus_name"
+          (cd snapshot && tar -cJf "$nexus_name-x86_64.tar.xz" "$nexus_name")
+          (cd snapshot && sha512sum "$nexus_name-x86_64.tar.xz" > "$nexus_name-x86_64.sha512sum")
+
+      - name: Publish the release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="runtime-$nexus_version"
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" \
+            "snapshot/$nexus_name-x86_64.tar.xz" \
+            "snapshot/$nexus_name-x86_64.sha512sum" \
+            --title "Xodus Nexus runtime $nexus_version" \
+            --notes "Official Xodus Proton snapshot (${base_name}, proton commit ${proton_commit}) with the Nexus xgameruntime compatibility patches (xgameruntime commit ${XGAMERUNTIME_PR_COMMIT}, patch state ${GITHUB_SHA}). Installed by the launcher from Settings → Xodus Runtime."
+
+      - name: Upload workflow artifact
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-runtime
+          path: snapshot/*-x86_64.tar.xz
+          retention-days: 7

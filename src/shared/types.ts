@@ -48,6 +48,13 @@ export interface RuntimeStatus {
   artifactName?: string;
   artifactExpiresAt?: string;
   artifactAvailable: boolean;
+  // Prebuilt runtime with the Nexus xgameruntime patches, published on the
+  // Xodus Nexus GitHub releases. Preferred over the official snapshot.
+  nexusAvailable?: boolean;
+  nexusName?: string;
+  nexusVersion?: string;
+  nexusChecking?: boolean;
+  nexusError?: string;
   prerequisites: { gh: boolean; authenticated: boolean; tar: boolean; sha512sum: boolean };
   phase?: string;
   error?: string;
@@ -64,6 +71,7 @@ export interface Game {
   launchArgs?: string;
   locale?: string;
   coverDataUrl?: string;
+  coverUrl?: string; // Store artwork from the Microsoft display catalog, used when the installation ships no local logo.
   installState: 'ready' | 'incomplete' | 'imported';
   installMessage?: string;
   launchSupport?: 'unknown' | 'offline-only-eac';
@@ -96,6 +104,7 @@ export interface DownloadTask {
   downloadedBytes?: number;
   totalBytes?: number;
   transferRate?: string;
+  coverUrl?: string; // Store box art for the queued product, for the queue list.
   phase: string;
   log: string[];
   startedAt: string;
@@ -126,6 +135,15 @@ export interface Settings {
   externalXodusRoot: string;
   runtimeRoot: string;
   verboseLogs: boolean;
+  firstRunCompleted?: boolean;
+}
+
+export interface LauncherUpdate {
+  currentVersion: string;
+  latestVersion?: string;
+  releaseUrl?: string;
+  checking: boolean;
+  checkedAt?: string;
 }
 
 export interface AppSnapshot {
@@ -135,6 +153,7 @@ export interface AppSnapshot {
   downloads: DownloadTask[];
   settings: Settings;
   auth: AuthStatus;
+  launcherUpdate?: LauncherUpdate;
   gameOperation?: GameOperation;
 }
 
@@ -180,9 +199,12 @@ export interface LauncherApi {
   updateBackend(): Promise<void>;
   refreshRuntime(): Promise<RuntimeStatus>;
   checkRuntimeUpdate(): Promise<RuntimeStatus>;
+  checkNexusRuntime(): Promise<RuntimeStatus>;
   installRuntime(): Promise<void>;
+  installNexusRuntime(): Promise<void>;
   rollbackRuntimePreview(): Promise<void>;
   refreshAccount(): Promise<AuthStatus>;
+  checkLauncherUpdate(): Promise<LauncherUpdate | undefined>;
   login(): Promise<void>;
   logout(): Promise<void>;
   searchCatalog(query: string, cursor?: string): Promise<CatalogSearchResult>;
@@ -206,4 +228,5 @@ export interface LauncherApi {
   openPath(path: string): Promise<void>;
   onSnapshot(callback: (snapshot: AppSnapshot) => void): () => void;
   onOperationLog(callback: (entry: { scope: string; line: string }) => void): () => void;
+  isDemoTour(): boolean;
 }

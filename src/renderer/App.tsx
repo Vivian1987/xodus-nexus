@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   ArrowDownToLine, Check, ChevronRight, CircleAlert, CircleUserRound,
   Cog, Download, FolderOpen, Gamepad2, Github, HardDrive, Home, Library,
-  LoaderCircle, LogIn, MoreHorizontal, PackageCheck, Play, Plus, RefreshCw, Search, Settings2,
+  LoaderCircle, LogIn, MoreHorizontal, PackageCheck, Play, Plus, RefreshCw, Rocket, Search, Settings2,
   Store, Terminal, Trash2, X,
 } from 'lucide-react';
 import type { AppSnapshot, CatalogProduct, CatalogSearchResult, Game, GameLaunchOptions, Page, Settings } from '../shared/types';
+import { estimateTimeRemaining } from '../shared/utils';
 
 const emptySnapshot: AppSnapshot = {
   backend: {
@@ -47,7 +48,11 @@ function NavItem({ active, icon, label, badge, onClick }: {
 }
 
 function Cover({ game, className = '' }: { game: Game; className?: string }) {
-  if (game.coverDataUrl) return <img className={`game-cover ${className}`} src={game.coverDataUrl} alt={`${game.title} artwork`} />;
+  const local = game.coverDataUrl;
+  const art = local ?? game.coverUrl;
+  // Local package logos and Store cover art are both square, so they fill
+  // the square tiles without cropping; odd-sized local art stays letterboxed.
+  if (art) return <img className={`game-cover ${local ? 'cover-local' : 'cover-store'} ${className}`} src={art} alt={`${game.title} artwork`} />;
   return <div className={`cover-placeholder ${className}`}><Gamepad2 /></div>;
 }
 
@@ -84,9 +89,10 @@ function HomePage({ data, go, action }: {
   const active = data.downloads.find((task) => task.status === 'running');
   const canPlay = Boolean(featured?.installState === 'ready' && data.backend.capabilities.run && (data.settings.winePath || data.runtime.winePath));
   const launchOptions = useGameLaunchOptions(featured, data);
+  const spotlightArt = featured?.coverDataUrl ?? featured?.coverUrl;
 
   return <main className="page home-page">
-    <section className={`spotlight ${featured?.coverDataUrl ? 'has-art' : ''}`} style={featured?.coverDataUrl ? { '--spotlight-art': `url(${featured.coverDataUrl})` } as React.CSSProperties : undefined}>
+    <section className={`spotlight ${spotlightArt ? 'has-art' : ''}`} style={spotlightArt ? { '--spotlight-art': `url(${spotlightArt})` } as React.CSSProperties : undefined}>
       <div className="spotlight-copy">
         <span className="overline">{featured ? 'CONTINUE PLAYING' : 'XODUS NEXUS'}</span>
         <h1>{featured?.title ?? 'Your PC games, brought together.'}</h1>
@@ -374,8 +380,8 @@ function DownloadsPage({ data, toast }: { data: AppSnapshot; toast: (value: Toas
     {data.downloads.length === 0 ? <div className="empty-state"><div><Download /></div><h2>Nothing in the queue</h2><p>Installations started from Store will appear here.</p></div> : <div className="download-list">{data.downloads.map((task) => {
       const running = task.status === 'running'; const failed = task.status === 'failed';
       return <article className={`download-item ${task.status}`} key={task.id}>
-        <div className="download-status">{running ? <LoaderCircle className="spin" /> : failed ? <CircleAlert /> : task.status === 'complete' ? <PackageCheck /> : <X />}</div>
-        <div className="download-main"><div className="download-heading"><div><h3>{task.kind === 'update' ? `Update · ${task.title}` : task.title}</h3><span>{task.productId} · {task.destination}</span></div><strong>{task.progress === null ? (running ? 'Active' : task.status) : `${Math.round(task.progress)}%`}</strong></div><div className={`progress-track ${task.progress === null && running ? 'indeterminate' : ''}`}><i style={task.progress !== null ? { width: `${task.progress}%` } : undefined} /></div><p className={failed ? 'error-text' : ''}>{task.error ?? task.phase}{task.totalBytes ? ` · ${size(task.downloadedBytes ?? 0)} / ${size(task.totalBytes)}` : ''}{task.transferRate ? ` · ${task.transferRate}` : ''}</p>{expanded === task.id ? <pre className="task-log">{task.log.length ? task.log.join('\n') : 'Xodus has not emitted text output yet.'}</pre> : null}</div>
+        <div className="download-status">{task.coverUrl ? <img className="download-cover" src={task.coverUrl} alt={`${task.title} artwork`} /> : running ? <LoaderCircle className="spin" /> : failed ? <CircleAlert /> : task.status === 'complete' ? <PackageCheck /> : <X />}{task.coverUrl && (running || failed) ? <span className={`download-badge ${failed ? 'failed' : ''}`}>{running ? <LoaderCircle className="spin" /> : <CircleAlert />}</span> : null}</div>
+        <div className="download-main"><div className="download-heading"><div><h3>{task.kind === 'update' ? `Update · ${task.title}` : task.title}</h3><span>{task.productId} · {task.destination}</span></div><strong>{task.progress === null ? (running ? 'Active' : task.status) : `${Math.round(task.progress)}%`}</strong></div><div className={`progress-track ${task.progress === null && running ? 'indeterminate' : ''}`}><i style={task.progress !== null ? { width: `${task.progress}%` } : undefined} /></div><p className={failed ? 'error-text' : ''}>{task.error ?? task.phase}{task.totalBytes ? ` · ${size(task.downloadedBytes ?? 0)} / ${size(task.totalBytes)}` : ''}{task.transferRate ? ` · ${task.transferRate}` : ''}{running && estimateTimeRemaining(task.transferRate, task.downloadedBytes, task.totalBytes) ? ` · ${estimateTimeRemaining(task.transferRate, task.downloadedBytes, task.totalBytes)}` : ''}</p>{expanded === task.id ? <pre className="task-log">{task.log.length ? task.log.join('\n') : 'Xodus has not emitted text output yet.'}</pre> : null}</div>
         <div className="download-actions">{running ? <button onClick={() => cancel(task.id)} title="Stop"><X /></button> : null}{failed || task.status === 'cancelled' ? <button disabled={Boolean(retrying) || data.downloads.some((entry) => entry.status === 'running')} onClick={() => retry(task)} title="Retry installation"><RefreshCw className={retrying === task.id ? 'spin' : ''} /></button> : null}<button onClick={() => setExpanded(expanded === task.id ? undefined : task.id)} title="Show log"><Terminal /></button><button onClick={() => window.launcher.openPath(task.destination)} title="Open folder"><FolderOpen /></button>{task.status !== 'running' && task.status !== 'queued' ? <button onClick={() => remove(task.id)} title="Remove from queue"><Trash2 /></button> : null}</div>
       </article>;
     })}</div>}
@@ -415,6 +421,14 @@ function SettingsPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast
   return <main className="page settings-page">
     <header className="page-header"><div><h1>Settings</h1><p>Account, backend, runtime, and storage.</p></div></header>
 
+    <section className="settings-card compact launcher-card">
+      <div className="settings-heading"><div className="settings-icon"><Rocket /></div><div><span className="overline">XODUS NEXUS</span><h2>{data.launcherUpdate?.currentVersion ?? 'Development build'}</h2><p>{data.launcherUpdate?.latestVersion ? `Version ${data.launcherUpdate.latestVersion} is available — re-run the install script or download the new AppImage.` : data.launcherUpdate?.checkedAt ? 'You are on the latest published release.' : 'Checks the public GitHub release list.'}</p></div></div>
+      <div className="button-row">
+        {data.launcherUpdate?.releaseUrl ? <a className="primary" href={data.launcherUpdate.releaseUrl} target="_blank" rel="noreferrer"><ArrowDownToLine />Download update</a> : null}
+        <button className="secondary" disabled={data.launcherUpdate?.checking} onClick={() => invoke('update-check', () => window.launcher.checkLauncherUpdate(), 'Update check finished.')}>{data.launcherUpdate?.checking ? <LoaderCircle className="spin" /> : <RefreshCw />}Check for updates</button>
+      </div>
+    </section>
+
     <section className="settings-card account-card">
       <div className="settings-heading"><div className="account-avatar large"><CircleUserRound /></div><div><span className="overline">MICROSOFT ACCOUNT</span><h2>{data.auth.username ?? (data.auth.stored === false ? 'Not signed in' : 'Account status unavailable')}</h2><p>{data.auth.stored === true ? 'Credentials stored by Xodus' : 'Authentication uses the original Xodus webview'}</p></div><span className={`status-label ${data.auth.stored === true ? 'ready' : data.auth.stored === false ? 'off' : 'unknown'}`}><StatusDot tone={data.auth.stored === true ? 'green' : data.auth.stored === false ? 'red' : 'amber'} />{data.auth.stored === true ? 'STORED' : data.auth.stored === false ? 'SIGNED OUT' : 'UNKNOWN'}</span></div>
       <div className="account-note"><CircleAlert /><span>{data.auth.note}</span></div>
@@ -435,7 +449,7 @@ function SettingsPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast
 
     <section className="settings-card">
       <div className="settings-heading"><div className="settings-icon"><Gamepad2 /></div><div><h2>Xodus Runtime</h2><p>{data.runtime.winePath ?? 'The Xodus Proton runtime is not installed'}</p></div><span className={`status-label ${data.runtime.installed ? 'ready' : 'unknown'}`}><StatusDot tone={data.runtime.installed ? 'green' : 'amber'} />{data.runtime.installed ? 'READY' : 'MISSING'}</span></div>
-      <div className="meta-grid"><div><span>SOURCE</span><strong>{data.runtime.name?.includes('-xgamesave-pr28-') ? 'Xodus snapshot + experimental PR #28 DLL' : 'Official GitHub Actions snapshot'}</strong></div><div><span>PROTON HEAD</span><strong className="mono">{data.runtime.upstreamCommit?.slice(0, 12) ?? data.runtime.commit?.slice(0, 12) ?? 'Not checked'}</strong></div><div><span>ARTIFACT EXPIRY</span><strong>{data.runtime.artifactExpiresAt ? new Date(data.runtime.artifactExpiresAt).toLocaleDateString('en-US') : '—'}</strong></div></div>
+      <div className="meta-grid"><div><span>SOURCE</span><strong>{data.runtime.name?.startsWith('xodus-nexus-runtime-') ? 'Xodus Nexus prebuilt runtime (patched)' : data.runtime.name?.includes('-xgamesave-pr28-') ? 'Xodus snapshot + experimental PR #28 DLL' : 'Official GitHub Actions snapshot'}</strong></div><div><span>PROTON HEAD</span><strong className="mono">{data.runtime.upstreamCommit?.slice(0, 12) ?? data.runtime.commit?.slice(0, 12) ?? 'Not checked'}</strong></div><div><span>ARTIFACT EXPIRY</span><strong>{data.runtime.artifactExpiresAt ? new Date(data.runtime.artifactExpiresAt).toLocaleDateString('en-US') : '—'}</strong></div></div>
       <div className="capability-row"><span>Required tools</span><ToggleStatus ok={data.runtime.prerequisites.gh} label="gh" /><ToggleStatus ok={data.runtime.prerequisites.authenticated} label="GitHub authentication" /><ToggleStatus ok={data.runtime.prerequisites.tar} label="tar/xz" /><ToggleStatus ok={data.runtime.prerequisites.sha512sum} label="SHA-512" /></div>
       <p className="fine-print">{data.runtime.name?.includes('-xgamesave-pr28-')
         ? data.runtime.name.includes('-bridge-v1')
@@ -443,7 +457,7 @@ function SettingsPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast
           : 'This runtime lacks the service transport needed for cloud saves. Update the active runtime.'
         : 'Standard CachyOS/GE Proton does not include Xodus Wine patches or xgameruntime. Every game uses this one active runtime; older releases are kept only for rollback.'}</p>
       {data.runtime.error ? <div className="alert amber"><CircleAlert /><span>{data.runtime.error}</span></div> : null}{data.runtime.phase ? <div className="runtime-phase"><LoaderCircle className={data.runtime.updating ? 'spin' : ''} /><span>{data.runtime.phase}</span></div> : null}
-      <div className="button-row end">{data.runtime.name?.includes('-xgamesave-pr28-') ? <button className="secondary" disabled={Boolean(busy) || data.runtime.updating} onClick={() => invoke('runtime-rollback-preview', () => window.launcher.rollbackRuntimePreview(), 'The previous runtime is active again.')}>Use previous runtime</button> : null}<button className="secondary" disabled={Boolean(busy) || data.runtime.checking} onClick={() => invoke('runtime-check', () => window.launcher.checkRuntimeUpdate())}>{busy === 'runtime-check' || data.runtime.checking ? <LoaderCircle className="spin" /> : <RefreshCw />}Check snapshot</button><button className="primary" disabled={Boolean(busy) || data.runtime.updating} onClick={() => invoke('runtime-install', () => window.launcher.installRuntime(), 'Xodus Runtime was verified, installed, and selected.')}>{busy === 'runtime-install' || data.runtime.updating ? <LoaderCircle className="spin" /> : <ArrowDownToLine />}{data.runtime.installed ? 'Reinstall current snapshot' : 'Install Xodus Runtime'}</button></div>
+      <div className="button-row end">{data.runtime.name?.includes('-xgamesave-pr28-') ? <button className="secondary" disabled={Boolean(busy) || data.runtime.updating} onClick={() => invoke('runtime-rollback-preview', () => window.launcher.rollbackRuntimePreview(), 'The previous runtime is active again.')}>Use previous runtime</button> : null}<button className="secondary" disabled={Boolean(busy) || data.runtime.checking} onClick={() => invoke('runtime-check', async () => { await window.launcher.checkRuntimeUpdate(); await window.launcher.checkNexusRuntime(); })}>{busy === 'runtime-check' || data.runtime.checking ? <LoaderCircle className="spin" /> : <RefreshCw />}Check snapshot</button>{data.runtime.nexusAvailable ? <button className="primary" disabled={Boolean(busy) || data.runtime.updating} onClick={() => invoke('runtime-install-nexus', () => window.launcher.installNexusRuntime(), 'Xodus Nexus runtime was verified, installed, and selected.')}>{busy === 'runtime-install-nexus' || data.runtime.updating ? <LoaderCircle className="spin" /> : <ArrowDownToLine />}Install Nexus runtime{data.runtime.nexusVersion ? ` ${data.runtime.nexusVersion.replace(/^runtime-/, '')}` : ''}</button> : null}<button className={data.runtime.nexusAvailable ? 'secondary' : 'primary'} disabled={Boolean(busy) || data.runtime.updating} onClick={() => invoke('runtime-install', () => window.launcher.installRuntime(), 'Xodus Runtime was verified, installed, and selected.')}>{busy === 'runtime-install' || data.runtime.updating ? <LoaderCircle className="spin" /> : <ArrowDownToLine />}{data.runtime.nexusAvailable ? 'Install official snapshot' : data.runtime.installed ? 'Reinstall current snapshot' : 'Install Xodus Runtime'}</button></div>
       {data.runtime.updating || runtimeLogs.length > 0 ? <pre className="build-log">{runtimeLogs.join('\n') || 'Waiting for output…'}</pre> : null}
     </section>
 
@@ -452,6 +466,52 @@ function SettingsPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast
       <section className="settings-card compact"><div className="settings-heading"><div className="settings-icon"><Cog /></div><div><h2>Build dependencies</h2><p>Checked locally using --version.</p></div></div><div className="dependency-grid"><ToggleStatus ok={data.backend.prerequisites.git} label="Git" /><ToggleStatus ok={data.backend.prerequisites.cargo} label="Cargo" /><ToggleStatus ok={data.backend.prerequisites.rustc} label="Rust ≥ 1.98" /><ToggleStatus ok={data.backend.prerequisites.protoc} label="protoc" /></div><p className="fine-print">Building Xodus also requires GTK 3, WebKitGTK 4.1, libsoup 3, and their development packages.</p></section>
     </div>
   </main>;
+}
+
+function FirstRunWizard({ data, toast }: { data: AppSnapshot; toast: (value: Toast) => void }) {
+  const [installRoot, setInstallRoot] = useState(data.settings.installRoot);
+  const [saving, setSaving] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+
+  async function browse() {
+    try {
+      const picked = await window.launcher.chooseDirectory(installRoot);
+      if (picked) setInstallRoot(picked);
+    } catch (error) { toast({ kind: 'error', message: errorMessage(error) }); }
+  }
+  async function signIn() {
+    setSigningIn(true);
+    try { await window.launcher.login(); }
+    catch (error) { toast({ kind: 'error', message: errorMessage(error) }); }
+    finally { setSigningIn(false); }
+  }
+  async function finish() {
+    setSaving(true);
+    try {
+      await window.launcher.updateSettings({ installRoot, firstRunCompleted: true });
+      toast({ kind: 'success', message: 'Welcome to Xodus Nexus. Install a game from the Store to get started.' });
+    } catch (error) { toast({ kind: 'error', message: errorMessage(error) }); }
+    finally { setSaving(false); }
+  }
+
+  return <div className="wizard-overlay">
+    <div className="wizard">
+      <div><span className="overline">WELCOME</span><h1>Set up Xodus Nexus</h1></div>
+      <p>Choose where games install. Everything else can be changed later in Settings.</p>
+      <label className="wizard-field">Games folder
+        <div className="input-action"><input value={installRoot} onChange={(event) => setInstallRoot(event.target.value)} /><button onClick={() => void browse()} title="Browse"><FolderOpen /></button></div>
+        <small>New games download and extract into this folder.</small>
+      </label>
+      <div className="wizard-account">
+        <div><strong>Microsoft account</strong><small>{data.auth.stored === true ? `Signed in as ${data.auth.username ?? 'stored account'}` : data.auth.stored === false ? 'Not signed in yet — Store browsing works without an account' : 'Account status is still being checked'}</small></div>
+        <button className="secondary" disabled={!data.backend.capabilities.login || signingIn} onClick={() => void signIn()}>{signingIn ? <LoaderCircle className="spin" /> : <LogIn />}{data.auth.stored ? 'Sign in again' : 'Sign in'}</button>
+      </div>
+      <div className="wizard-actions">
+        <span>Signing in can also be done later from Settings.</span>
+        <button className="primary" disabled={saving} onClick={() => void finish()}>{saving ? <LoaderCircle className="spin" /> : <Check />}Start using Xodus Nexus</button>
+      </div>
+    </div>
+  </div>;
 }
 
 export default function App() {
@@ -467,6 +527,14 @@ export default function App() {
     return window.launcher.onSnapshot(setData);
   }, []);
   useEffect(() => { if (!toast) return; const timeout = window.setTimeout(() => setToast(undefined), 5000); return () => window.clearTimeout(timeout); }, [toast]);
+  useEffect(() => {
+    // XODUS_DEMO_TOUR=1 cycles through the pages for screenshot capture.
+    if (!window.launcher.isDemoTour()) return;
+    const order: Page[] = ['home', 'library', 'store', 'downloads', 'settings'];
+    let index = 0;
+    const timer = window.setInterval(() => { index = (index + 1) % order.length; setPage(order[index]); }, 7000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const activeCount = data.downloads.filter((task) => task.status === 'running').length;
   const searchResults = useMemo(() => search.trim() ? data.games.filter((game) => `${game.title} ${game.storeId ?? ''}`.toLowerCase().includes(search.toLowerCase())) : [], [data.games, search]);
@@ -475,6 +543,7 @@ export default function App() {
 
   if (loading) return <div className="boot"><div className="brand-mark">X</div><LoaderCircle className="spin" /><span>Loading Xodus Nexus</span></div>;
   return <div className="app-shell">
+    {!data.settings.firstRunCompleted ? <FirstRunWizard data={data} toast={(value) => setToast(value)} /> : null}
     <aside className="sidebar">
       <button className="account-summary" onClick={() => setPage('settings')}><div className="account-avatar"><CircleUserRound /></div><span><strong>{accountTitle}</strong><small>{data.auth.stored === true ? 'Credentials stored' : data.auth.stored === false ? 'Not signed in' : 'Status unavailable'}</small></span><ChevronRight /></button>
       <nav><NavItem active={page === 'home'} icon={<Home />} label="Home" onClick={() => setPage('home')} /><NavItem active={page === 'store'} icon={<Store />} label="Store" onClick={() => setPage('store')} /><NavItem active={page === 'library'} icon={<Library />} label="My Library" onClick={() => setPage('library')} /><NavItem active={page === 'downloads'} icon={<Download />} label="Install Queue" badge={activeCount} onClick={() => setPage('downloads')} /></nav>

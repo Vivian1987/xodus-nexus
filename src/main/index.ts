@@ -5,8 +5,9 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { AppSnapshot, AuthStatus, DownloadTask, Game, GameLaunchOptions, GameOperation, InstallRequest, Settings } from '../shared/types.js';
-import { downloadFailure, progressBytesFromLine, progressFromLine, safeProductId } from '../shared/utils.js';
+import type { AppSnapshot, AuthStatus, DownloadTask, Game, GameLaunchOptions, GameOperation, InstallRequest, LauncherUpdate, Settings } from '../shared/types.js';
+import { downloadFailure, isNewerVersion, progressBytesFromLine, progressFromLine, safeProductId } from '../shared/utils.js';
+import { demoDownloads, demoGames, demoLaunchOptions, demoLocales, demoSnapshot } from '../shared/demo-data.js';
 import { BackendManager, LINUX_RUN_PATCH } from './backend.js';
 import { run, spawnTracked } from './process.js';
 import { inspectGameDirectory, StateStore } from './store.js';
@@ -39,9 +40,15 @@ let authState: AppSnapshot['auth'] = {
   note: 'Checking the Xodus system keychain for a stored Microsoft account…',
 };
 const catalog = new CatalogService();
+const demoMode = process.env.XODUS_DEMO === '1';
+const demoCoverUrls = new Map<string, string>();
+const RELEASES_API = 'https://api.github.com/repos/domsvoboda/xodus-nexus/releases/latest';
+const RELEASES_PAGE = 'https://github.com/domsvoboda/xodus-nexus/releases/latest';
+let launcherUpdate: LauncherUpdate = { currentVersion: app.getVersion(), checking: false };
 let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
 
 function snapshot(): AppSnapshot {
+  if (demoMode) return demoSnapshot(demoCoverUrls);
   return {
     backend: backend.current,
     runtime: runtime.current,
@@ -49,8 +56,31 @@ function snapshot(): AppSnapshot {
     downloads: structuredClone(store.downloads),
     settings: structuredClone(store.settings),
     auth: structuredClone(authState),
+    launcherUpdate: structuredClone(launcherUpdate),
     gameOperation: gameOperation ? structuredClone(gameOperation) : undefined,
   };
+}
+
+// Checks the public GitHub release list; the launcher never downloads or
+// replaces itself, it only tells the user a newer AppImage exists.
+async function checkLauncherUpdate(): Promise<void> {
+  launcherUpdate = { ...launcherUpdate, checking: true };
+  emitSnapshot();
+  try {
+    const response = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
+    const release = response.ok ? await response.json() as { tag_name?: unknown } : undefined;
+    const tag = typeof release?.tag_name === 'string' && release.tag_name.trim() ? release.tag_name.trim() : undefined;
+    const newer = tag ? isNewerVersion(tag, app.getVersion()) : false;
+    launcherUpdate = {
+      currentVersion: app.getVersion(),
+      latestVersion: newer && tag ? tag : undefined,
+      releaseUrl: newer ? RELEASES_PAGE : undefined,
+      checking: false,
+      checkedAt: new Date().toISOString(),
+    };
+  } catch {
+    launcherUpdate = { ...launcherUpdate, checking: false, checkedAt: new Date().toISOString() };
+  }
 }
 
 function emitSnapshot(): void {
@@ -194,6 +224,13 @@ async function startInstall(request: InstallRequest, updateGame?: Game): Promise
   };
   await store.addDownload(task);
   emitSnapshot();
+  // Show the game's Store box art in the queue while it downloads.
+  void catalog.posters([productId], currentMarket()).then(async (posters) => {
+    const coverUrl = posters.get(productId);
+    if (!coverUrl) return;
+    await store.updateDownload(id, { coverUrl });
+    emitSnapshot();
+  }, () => { /* Covers are optional. */ });
 
   const args = ['streaming', productId, destination, '--parallel', String(store.settings.parallelDownloads)];
   if (store.settings.market) args.push('--market', store.settings.market);
@@ -273,6 +310,10 @@ async function importGame(input?: string): Promise<Game | null> {
     directory = result.filePaths[0];
   }
   const game = await inspectGameDirectory(path.resolve(directory));
+  if (!game.coverDataUrl && game.storeId) {
+    const posters = await catalog.posters([game.storeId], currentMarket());
+    game.coverUrl = posters.get(game.storeId);
+  }
   await store.upsertGame(game);
   emitSnapshot();
   return game;
@@ -589,20 +630,97 @@ async function installGameVcRuntime(id: string): Promise<void> {
   }
 }
 
+function currentMarket(): string {
+  const configured = store.settings.market;
+  return configured.toLowerCase() === 'neutral' ? app.getLocaleCountryCode() || 'US' : configured;
+}
+
+// Library covers for games whose installation ships no local artwork:
+// the same public display catalog that enriches Store results provides the
+// published poster by the game's real Store Product ID.
+async function enrichLibraryCovers(): Promise<void> {
+  const missing = store.games.filter((game) => game.storeId && !game.coverDataUrl && !game.coverUrl);
+  if (missing.length === 0) return;
+  const posters = await catalog.posters(missing.map((game) => game.storeId!), currentMarket());
+  for (const game of missing) {
+    const coverUrl = posters.get(game.storeId!);
+    if (coverUrl) await store.patchGame(game.id, { coverUrl });
+  }
+}
+
+async function loadDemoCovers(): Promise<void> {
+  const ids = [...new Set([
+    ...demoGames.flatMap((game) => (game.storeId ? [game.storeId] : [])),
+    ...demoDownloads.flatMap((task) => (task.productId ? [task.productId] : [])),
+  ])];
+  for (const [id, url] of await catalog.posters(ids, demoSnapshot().settings.market)) demoCoverUrls.set(id, url);
+}
+
+// XODUS_DEMO=1 serves sample state without touching the real backend,
+// runtime, account or installed games. Store pages deliberately keep using
+// the live Microsoft Store catalog so demo screenshots show real data.
+function registerDemoIpc(catalogMarket: () => string): void {
+  ipcMain.handle('get-snapshot', () => snapshot());
+  ipcMain.handle('backend-refresh', () => snapshot().backend);
+  ipcMain.handle('backend-check-update', () => snapshot().backend);
+  ipcMain.handle('backend-update', () => {});
+  ipcMain.handle('runtime-refresh', () => snapshot().runtime);
+  ipcMain.handle('runtime-check-update', () => snapshot().runtime);
+  ipcMain.handle('runtime-check-nexus', () => snapshot().runtime);
+  ipcMain.handle('runtime-install', () => {});
+  ipcMain.handle('runtime-install-nexus', () => {});
+  ipcMain.handle('runtime-rollback-preview', () => {});
+  ipcMain.handle('account-refresh', () => snapshot().auth);
+  ipcMain.handle('check-launcher-update', () => snapshot().launcherUpdate);
+  ipcMain.handle('login', () => {});
+  ipcMain.handle('logout', () => {});
+  ipcMain.handle('catalog-search', (_event, query: string, cursor?: string) => catalog.search(query, catalogMarket(), cursor));
+  ipcMain.handle('catalog-featured', () => catalog.featured(catalogMarket()));
+  ipcMain.handle('start-install', () => 'demo-download');
+  ipcMain.handle('update-installed-game', (_event, id: string) => id);
+  ipcMain.handle('cancel-download', () => {});
+  ipcMain.handle('remove-download', () => {});
+  ipcMain.handle('clear-finished-downloads', () => {});
+  ipcMain.handle('import-game', () => null);
+  ipcMain.handle('game-locales', () => demoLocales);
+  ipcMain.handle('update-game', (_event, id: string, patch: Partial<Game>) => {
+    const game = demoGames.find((entry) => entry.id === id) ?? demoGames[0];
+    return { ...game, ...patch };
+  });
+  ipcMain.handle('remove-game', () => {});
+  ipcMain.handle('game-launch-options', () => demoLaunchOptions);
+  ipcMain.handle('launch-game', () => {});
+  ipcMain.handle('install-game-vc-runtime', () => {});
+  ipcMain.handle('cancel-game', () => {});
+  ipcMain.handle('update-settings', (_event, patch: Partial<Settings>) => ({ ...demoSnapshot().settings, ...patch }));
+  ipcMain.handle('choose-directory', () => null);
+  ipcMain.handle('choose-file', () => null);
+  ipcMain.handle('open-path', () => {});
+}
+
 function registerIpc(): void {
-  const catalogMarket = () => {
-    const configured = store.settings.market;
-    return configured.toLowerCase() === 'neutral' ? app.getLocaleCountryCode() || 'US' : configured;
-  };
+  const catalogMarket = currentMarket;
+  if (demoMode) {
+    registerDemoIpc(catalogMarket);
+    return;
+  }
   ipcMain.handle('get-snapshot', () => snapshot());
   ipcMain.handle('backend-refresh', async () => { const value = await backend.refresh(); await refreshAccount(false); emitSnapshot(); return value; });
   ipcMain.handle('backend-check-update', async () => { const value = await backend.checkUpdate(); emitSnapshot(); return value; });
   ipcMain.handle('backend-update', async () => { await backend.update(emitSnapshot); await refreshAccount(); });
   ipcMain.handle('runtime-refresh', async () => { const value = await runtime.refresh(); await syncManagedWinePath(); await refreshAccount(false); emitSnapshot(); return value; });
   ipcMain.handle('runtime-check-update', async () => { const value = await runtime.check(); emitSnapshot(); return value; });
+  ipcMain.handle('runtime-check-nexus', async () => { const value = await runtime.checkNexus(); emitSnapshot(); return value; });
   ipcMain.handle('runtime-install', async () => {
     ensureIdle();
     const winePath = await runtime.install(emitSnapshot);
+    await store.setSettings({ winePath });
+    await refreshAccount(false);
+    emitSnapshot();
+  });
+  ipcMain.handle('runtime-install-nexus', async () => {
+    ensureIdle();
+    const winePath = await runtime.installNexus(emitSnapshot);
     await store.setSettings({ winePath });
     await refreshAccount(false);
     emitSnapshot();
@@ -615,6 +733,7 @@ function registerIpc(): void {
     emitSnapshot();
   });
   ipcMain.handle('account-refresh', () => refreshAccount());
+  ipcMain.handle('check-launcher-update', async () => { await checkLauncherUpdate(); emitSnapshot(); return snapshot().launcherUpdate; });
   ipcMain.handle('login', () => runAuth('login'));
   ipcMain.handle('logout', () => runAuth('logout'));
   ipcMain.handle('catalog-search', (_event, query: string, cursor?: string) => {
@@ -710,6 +829,7 @@ function registerIpc(): void {
     if (typeof patch.externalXodusRoot === 'string') allowed.externalXodusRoot = path.resolve(patch.externalXodusRoot);
     if (typeof patch.runtimeRoot === 'string') allowed.runtimeRoot = path.resolve(patch.runtimeRoot);
     if (typeof patch.verboseLogs === 'boolean') allowed.verboseLogs = patch.verboseLogs;
+    if (typeof patch.firstRunCompleted === 'boolean') allowed.firstRunCompleted = patch.firstRunCompleted;
     const settings = await store.setSettings(allowed);
     backend.setExternalRoot(settings.externalXodusRoot);
     runtime.setRoot(settings.runtimeRoot);
@@ -738,6 +858,7 @@ async function createWindow(): Promise<void> {
   const smokeScreenshot = process.env.XODUS_NEXUS_SMOKE_SCREENSHOT;
   const smokeStoreQuery = process.env.XODUS_NEXUS_SMOKE_STORE_QUERY;
   const smokeStore = process.env.XODUS_NEXUS_SMOKE_STORE === '1' || Boolean(smokeStoreQuery);
+  const demoCaptureDir = process.env.XODUS_DEMO_CAPTURE_DIR;
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -766,6 +887,19 @@ async function createWindow(): Promise<void> {
   });
   if (process.env.VITE_DEV_SERVER_URL) await mainWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${smokeStore ? '#store' : ''}`);
   else await mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'), smokeStore ? { hash: 'store' } : undefined);
+  if (demoCaptureDir) {
+    // Demo screenshot capture: with XODUS_DEMO=1 and XODUS_DEMO_TOUR=1 the
+    // renderer cycles pages every 7s; grab one shot per page just before
+    // each switch, offscreen, without any account or network data.
+    await fs.mkdir(demoCaptureDir, { recursive: true });
+    const pages = ['home', 'library', 'store', 'downloads', 'settings'];
+    for (let index = 0; index < pages.length; index++) {
+      await new Promise((resolve) => setTimeout(resolve, index === 0 ? 6000 : 7000));
+      const image = await mainWindow.webContents.capturePage();
+      await fs.writeFile(path.join(demoCaptureDir, `demo-${pages[index]}.png`), image.toPNG());
+    }
+    app.quit();
+  }
   if (smokeScreenshot) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     if (smokeStoreQuery) {
@@ -791,6 +925,17 @@ async function createWindow(): Promise<void> {
 app.whenReady().then(async () => {
   store = new StateStore(app.getPath('userData'));
   await store.load();
+  if (demoMode) {
+    // Demo mode: no backend build, no runtime, no account access. Library
+    // covers are fetched from the live Store; Store pages are live too.
+    // Start the cover fetch before createWindow because a demo capture
+    // keeps createWindow busy until the tour finishes.
+    registerIpc();
+    void loadDemoCovers().then(() => emitSnapshot(), () => { /* Covers are optional. */ });
+    await createWindow();
+    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
+    return;
+  }
   for (const game of [...store.games]) {
     try {
       const inspected = await inspectGameDirectory(game.path);
@@ -810,8 +955,11 @@ app.whenReady().then(async () => {
   backend = new BackendManager(app.getPath('userData'), store.settings.externalXodusRoot, emitLog, () => operations.size > 0 || runtime?.current.updating === true);
   await backend.refresh();
   await runtime.refresh();
+  void runtime.checkNexus().then(() => emitSnapshot(), () => { /* Nexus runtime is optional. */ });
   await syncManagedWinePath();
   await refreshAccount(false);
+  void enrichLibraryCovers().then(() => emitSnapshot(), () => { /* Covers are optional. */ });
+  void checkLauncherUpdate().then(() => emitSnapshot());
   registerIpc();
   await createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });

@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Game, InstallRequest, LauncherApi, Settings } from '../shared/types.js';
 
+// Demo fixtures live in the main process (src/shared/demo-data.ts) and are
+// served over these same IPC channels when XODUS_DEMO=1, so the sandboxed
+// preload stays a thin passthrough. Store pages always use the live
+// Microsoft Store catalog. No real credentials, tokens or account data.
 const api: LauncherApi = {
   getSnapshot: () => ipcRenderer.invoke('get-snapshot'),
   refreshBackend: () => ipcRenderer.invoke('backend-refresh'),
@@ -8,9 +12,12 @@ const api: LauncherApi = {
   updateBackend: () => ipcRenderer.invoke('backend-update'),
   refreshRuntime: () => ipcRenderer.invoke('runtime-refresh'),
   checkRuntimeUpdate: () => ipcRenderer.invoke('runtime-check-update'),
+  checkNexusRuntime: () => ipcRenderer.invoke('runtime-check-nexus'),
   installRuntime: () => ipcRenderer.invoke('runtime-install'),
+  installNexusRuntime: () => ipcRenderer.invoke('runtime-install-nexus'),
   rollbackRuntimePreview: () => ipcRenderer.invoke('runtime-rollback-preview'),
   refreshAccount: () => ipcRenderer.invoke('account-refresh'),
+  checkLauncherUpdate: () => ipcRenderer.invoke('check-launcher-update'),
   login: () => ipcRenderer.invoke('login'),
   logout: () => ipcRenderer.invoke('logout'),
   searchCatalog: (query: string, cursor?: string) => ipcRenderer.invoke('catalog-search', query, cursor),
@@ -42,6 +49,7 @@ const api: LauncherApi = {
     ipcRenderer.on('operation-log', listener);
     return () => ipcRenderer.removeListener('operation-log', listener);
   },
+  isDemoTour: () => process.env.XODUS_DEMO_TOUR === '1',
 };
 
 contextBridge.exposeInMainWorld('launcher', api);

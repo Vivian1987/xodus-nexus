@@ -7,6 +7,11 @@ interface StoreImage {
   url?: unknown;
 }
 
+interface DisplayCatalogImage {
+  ImagePurpose?: unknown;
+  Uri?: unknown;
+}
+
 interface StoreSearchProduct {
   productId?: unknown;
   title?: unknown;
@@ -51,6 +56,9 @@ interface BundleReference {
 const IMAGE_HOSTS = new Set(['store-images.s-microsoft.com', 'store-images.microsoft.com']);
 const STORE_HOSTS = new Set(['www.xbox.com', 'xbox.com', 'apps.microsoft.com']);
 const CACHE_TTL_MS = 10 * 60 * 1000;
+// Box art is square and carries the game's title branding, matching the
+// square library tiles; promotional square art is the textless fallback.
+const POSTER_PURPOSES = ['BoxArt', 'FeaturePromotionalSquareArt', 'Poster', 'TitledPoster'];
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -79,6 +87,10 @@ function normalizeMarket(input: string): string {
 }
 
 function findImage(product: StoreSearchProduct, types: string[]): string | undefined {
+  // Box art carries the game's title branding; poster art is often textless
+  // promotional key art, so it is only a fallback.
+  const boxArt = safeUrl(product.boxArtUrl, IMAGE_HOSTS);
+  if (boxArt) return boxArt;
   const direct = types.includes('Poster') ? safeUrl(product.posterArtUrl, IMAGE_HOSTS) : undefined;
   if (direct) return direct;
   const images = Array.isArray(product.images) ? product.images as StoreImage[] : [];
@@ -87,7 +99,7 @@ function findImage(product: StoreSearchProduct, types: string[]): string | undef
     const url = safeUrl(match?.url, IMAGE_HOSTS);
     if (url) return url;
   }
-  return safeUrl(product.boxArtUrl, IMAGE_HOSTS);
+  return undefined;
 }
 
 function findHero(product: StoreSearchProduct): string | undefined {
@@ -224,7 +236,7 @@ export function parseCatalogProducts(search: StoreSearchResponse, catalog: Displ
       title,
       description: string(product.description) ?? 'Microsoft Store did not provide a description.',
       publisher: string(product.publisherName),
-      posterUrl: findImage(product, ['Poster', 'BoxArt']),
+      posterUrl: findImage(product, ['BoxArt', 'Poster']),
       heroUrl: findHero(product),
       storeUrl: safeUrl(product.redirectUrl, STORE_HOSTS),
       categories: Array.isArray(product.categories) ? product.categories.flatMap((entry) => string(entry) ?? []) : [],
@@ -331,5 +343,43 @@ export class CatalogService {
     const value = await this.result(search, string(search.title) ?? 'Trending games', market, false);
     this.cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, value });
     return structuredClone(value);
+  }
+
+  // Cover artwork for installed games, looked up by real Store Product IDs
+  // in the same public display catalog used for package enrichment.
+  async posters(ids: string[], rawMarket: string): Promise<Map<string, string>> {
+    const market = normalizeMarket(rawMarket);
+    const unique = ids
+      .map((id) => id.trim().toUpperCase())
+      .filter((id) => /^[A-Z0-9]{4,30}$/.test(id))
+      .filter((id, index, values) => values.indexOf(id) === index);
+    const posters = new Map<string, string>();
+    for (let offset = 0; offset < unique.length; offset += 25) {
+      const batch = unique.slice(offset, offset + 25);
+      const detailsUrl = new URL('https://displaycatalog.mp.microsoft.com/v7.0/products');
+      detailsUrl.searchParams.set('bigIds', batch.join(','));
+      detailsUrl.searchParams.set('market', market);
+      detailsUrl.searchParams.set('languages', 'en-us,neutral');
+      try {
+        const response = await this.fetcher(detailsUrl, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+        if (!response.ok) continue;
+        const catalog = await response.json() as DisplayCatalogResponse;
+        for (const entry of Array.isArray(catalog.Products) ? catalog.Products : []) {
+          const record = object(entry);
+          const id = string(record?.ProductId)?.toUpperCase();
+          if (!id || !record) continue;
+          const localized = Array.isArray(record.LocalizedProperties) ? record.LocalizedProperties : [];
+          const first = object(localized[0]);
+          const images = Array.isArray(first?.Images) ? first.Images as DisplayCatalogImage[] : [];
+          const purpose = POSTER_PURPOSES.flatMap((name) => images.filter((image) => string(image.ImagePurpose) === name))[0];
+          const uri = string(purpose?.Uri);
+          const url = uri?.startsWith('//') ? safeUrl(`https:${uri}`, IMAGE_HOSTS) : safeUrl(uri, IMAGE_HOSTS);
+          if (url) posters.set(id, url);
+        }
+      } catch {
+        // Covers stay hidden when the display catalog is unavailable.
+      }
+    }
+    return posters;
   }
 }

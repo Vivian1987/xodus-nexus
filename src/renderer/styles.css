@@ -118,6 +118,7 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .poster-card strong { display: block; margin-top: 9px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .poster-card > span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .game-cover, .cover-placeholder { width: 100%; object-fit: cover; background: #30343a; }
+.game-cover.cover-local { object-fit: contain; }
 .cover-placeholder { display: grid; place-items: center; color: #91969c; }
 .cover-placeholder svg { width: 30%; }
 .empty-strip { min-height: 82px; border: 1px solid var(--line); background: var(--surface); display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 14px; padding: 15px 18px; }
@@ -167,7 +168,7 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .catalog-card:hover, .catalog-card.selected { background: #24272b; border-color: #50555b; }
 .catalog-card.selected { outline: 1px solid rgba(255,255,255,.4); }
 .catalog-card-main { width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
-.catalog-card-main > img, .catalog-cover-placeholder { width: 100%; aspect-ratio: 2/3; display: grid; place-items: center; object-fit: cover; background: #2c3035; }
+.catalog-card-main > img, .catalog-cover-placeholder { width: 100%; aspect-ratio: 1/1; display: grid; place-items: center; object-fit: cover; background: #2c3035; }
 .catalog-cover-placeholder svg { width: 33%; color: #7e848a; }
 .catalog-card-main > div:last-child { min-width: 0; padding: 11px 11px 6px; display: grid; gap: 4px; }
 .catalog-card-main strong, .catalog-card-main small, .catalog-card-main div > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -258,6 +259,7 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .game-detail { align-self: start; background: #222529; border: 1px solid var(--line); }
 .detail-art { height: 250px; position: relative; overflow: hidden; }
 .detail-art > .game-cover, .detail-art > .cover-placeholder { width: 100%; height: 100%; object-fit: cover; }
+.detail-art > .game-cover.cover-local { object-fit: contain; }
 .detail-shade { position: absolute; inset: 0; background: linear-gradient(0deg, #222529 1%, transparent 72%); }
 .detail-art > div:last-child { position: absolute; left: 20px; right: 20px; bottom: 14px; }
 .detail-art h2 { margin: 8px 0 3px; font-size: 23px; line-height: 1.05; }
@@ -296,9 +298,13 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 
 .download-list { display: grid; gap: 9px; }
 .download-item { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: 13px; padding: 17px; background: var(--surface); border: 1px solid var(--line); }
-.download-status { width: 39px; height: 39px; display: grid; place-items: center; background: #30352c; color: var(--green); }
+.download-status { position: relative; width: 39px; height: 39px; display: grid; place-items: center; background: #30352c; color: var(--green); border-radius: 3px; overflow: hidden; }
+.download-status img.download-cover { width: 100%; height: 100%; object-fit: cover; }
+.download-badge { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; padding: 2px; background: rgba(10, 12, 14, .78); color: var(--green); border-radius: 3px; }
+.download-badge.failed { color: var(--danger); }
+.download-badge svg { width: 10px; height: 10px; }
 .download-item.failed .download-status { background: rgba(241,112,112,.1); color: var(--danger); }
-.download-status svg { width: 20px; }
+.download-status > svg { width: 20px; }
 .download-heading { display: flex; justify-content: space-between; gap: 15px; }
 .download-heading h3 { margin: 0 0 4px; font-size: 12px; }
 .download-heading span { color: var(--faint); font: 9px monospace; }
@@ -318,6 +324,22 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .settings-page { max-width: 1240px; }
 .settings-card { margin-bottom: 14px; padding: 24px; background: #222529; border: 1px solid var(--line); }
 .settings-card.compact { margin-bottom: 0; }
+.launcher-card { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; }
+.launcher-card .settings-heading { margin: 0; }
+.button-row a.primary { display: inline-flex; align-items: center; gap: 8px; padding: 0 17px; min-height: 39px; border-radius: 3px; background: #388e35; color: #fff; border: 1px solid transparent; font-size: 12px; font-weight: 650; text-decoration: none; }
+.button-row a.primary:hover { background: var(--green-hover); }
+.button-row a.primary svg { width: 17px; height: 17px; }
+
+.wizard-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(8, 10, 12, .74); backdrop-filter: blur(3px); display: grid; place-items: center; }
+.wizard { width: min(540px, 92vw); padding: 30px 32px; background: #1c1f23; border: 1px solid var(--line); border-radius: 7px; display: grid; gap: 16px; }
+.wizard h1 { margin: 6px 0 0; font-size: 27px; letter-spacing: -.03em; }
+.wizard > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.wizard-field { display: grid; gap: 6px; font-size: 10px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.wizard-field small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+.wizard-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.wizard-account small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+.wizard-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wizard-actions > span { color: var(--faint); font-size: 9px; max-width: 250px; }
 .process-mode { margin: 0 0 14px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 16px; background: #222529; border: 1px solid var(--line); font-size: 11px; }
 .process-mode > span { font-weight: 700; }
 .process-mode label { display: flex; align-items: center; gap: 9px; color: #d2d6d9; cursor: pointer; }
@@ -399,7 +421,7 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .spotlight p { font-size: 14px; }
 button.primary, button.secondary { border-radius: 5px; min-height: 40px; font-size: 12px; }
 .catalog-card { border-radius: 7px; background: #282b31; border-color: rgba(255,255,255,.06); }
-.catalog-card-main > img, .catalog-cover-placeholder { aspect-ratio: 1/1.13; }
+.catalog-card-main > img, .catalog-cover-placeholder { aspect-ratio: 1/1; }
 .catalog-card-main strong { font-size: 13px; }
 .catalog-card-main small, .catalog-card-main div > span { font-size: 10px; }
 .catalog-card-install { border-radius: 5px; font-size: 11px; }
