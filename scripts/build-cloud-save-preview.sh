@@ -58,8 +58,11 @@ git -C "$work_dir/src" apply "$script_root/assets/xgameruntime-package-locale.pa
 )
 
 result="$work_dir/build/dlls/xgameruntime/x86_64-windows/xgameruntime.dll"
-if [[ $(file -b -- "$result") != *'PE32+ executable for WINE (DLL)'* ]]; then
-  echo 'The build did not produce the expected 64-bit Wine DLL.' >&2
+# file(1) wording differs between versions (5.48 prints "for WINE", older
+# runner versions print "for MS Windows"); check the architecture instead.
+if ! file -b -- "$result" | grep -q 'PE32+ executable.*x86-64'; then
+  echo 'The build did not produce the expected 64-bit Wine DLL:' >&2
+  file -b -- "$result" >&2
   exit 1
 fi
 echo "Built $result"
