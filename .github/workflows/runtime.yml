@@ -60,6 +60,17 @@ jobs:
             echo "No successful snapshot run for $commit." >&2; exit 1
           fi
           echo "snapshot_run_id=$run_id" >> "$GITHUB_ENV"
+          # gh run download --name matches exact artifact names only in
+          # current gh versions; resolve them from the API instead of globs.
+          snapshot_tar=$(gh api "repos/xodus-gaming/Proton/actions/runs/$run_id/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false) | .name] | map(select(endswith("-x86_64.tar.xz")))[0]')
+          snapshot_sum=$(gh api "repos/xodus-gaming/Proton/actions/runs/$run_id/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false) | .name] | map(select(endswith("-x86_64.sha512sum")))[0]')
+          if [[ -z "$snapshot_tar" || "$snapshot_tar" == "null" ]]; then
+            echo "No x86_64 tar.xz artifact in run $run_id." >&2; exit 1
+          fi
+          echo "snapshot_tar=$snapshot_tar" >> "$GITHUB_ENV"
+          echo "snapshot_sum=$snapshot_sum" >> "$GITHUB_ENV"
 
       - name: Download the official snapshot
         env:
@@ -68,11 +79,11 @@ jobs:
           set -euo pipefail
           mkdir -p snapshot
           gh run download "$snapshot_run_id" --repo xodus-gaming/Proton \
-            --name '*-x86_64.tar.xz' --dir snapshot
+            --name "$snapshot_tar" --dir snapshot
           gh run download "$snapshot_run_id" --repo xodus-gaming/Proton \
-            --name '*-x86_64.sha512sum' --dir snapshot
-          archive=$(find snapshot -name '*-x86_64.tar.xz' | head -n1)
-          checksum=$(find snapshot -name '*-x86_64.sha512sum' | head -n1)
+            --name "$snapshot_sum" --dir snapshot
+          archive="snapshot/$snapshot_tar"
+          checksum="snapshot/$snapshot_sum"
           (cd snapshot && sha512sum -c "$(basename "$checksum")")
           base_name=$(tar -tJf "$archive" | head -n1 | cut -d/ -f1)
           echo "base_name=$base_name" >> "$GITHUB_ENV"
