@@ -49,7 +49,11 @@ git -C "$work_dir/src" apply --check "$script_root/assets/xgameruntime-package-l
 git -C "$work_dir/src" apply "$script_root/assets/xgameruntime-package-locale.patch"
 (
   cd "$work_dir/build"
-  ../src/configure --enable-win64
+  # XODUS_CONFIGURE_EXTRA carries extra configure flags (CI builds only the
+  # mingw xgameruntime DLL and passes --without-x to skip the X11 dev files
+  # wine's configure otherwise requires; local builds leave it unset).
+  # shellcheck disable=SC2086
+  ../src/configure --enable-win64 ${XODUS_CONFIGURE_EXTRA:-}
   make -j8 dlls/xgameruntime/x86_64-windows/xgameruntime.dll
 )
 

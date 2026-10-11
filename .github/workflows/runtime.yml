@@ -31,6 +31,9 @@ permissions:
 env:
   WINE_COMMIT: b1dd32734a34472a28eb5be9922df06e07ac0834
   XGAMERUNTIME_PR_COMMIT: 3fd4ae1091339ef07d6f2d53fda8e15541f96ad3
+  # The runner has no X11 development files; the mingw xgameruntime DLL
+  # build does not need X support, so wine configure skips it.
+  XODUS_CONFIGURE_EXTRA: --without-x
 
 jobs:
   build:
