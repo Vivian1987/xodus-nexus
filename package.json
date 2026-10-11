@@ -12,6 +12,7 @@
     "clean": "node -e \"for (const p of ['dist','dist-electron']) require('node:fs').rmSync(p,{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
+    "test:runtime-tools": "node --test scripts/eac-trace-summary.test.mjs scripts/wine-exception-metadata.test.mjs scripts/assemble-shared-runtime.test.mjs scripts/verify-runtime-base.test.mjs",
     "build": "npm run clean && npm run typecheck && npm run test && vite build && tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --linux AppImage tar.gz",
     "pack": "npm run build && electron-builder --linux dir"

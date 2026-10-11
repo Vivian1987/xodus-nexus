@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +15,49 @@ afterEach(async () => {
 });
 
 describe('prepareProtonRunner', () => {
+  it.each([false, true])('provisions shared HTTP/2 dependencies safely (old symlink: %s)', async (oldSymlink) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'xodus-nexus-h2-prefix-'));
+    created.push(root);
+    const runtime = path.join(root, 'runtime');
+    const wine = path.join(runtime, 'files/bin/wine');
+    const compat = path.join(root, 'compat');
+    const system32 = path.join(compat, 'pfx/drive_c/windows/system32');
+    const dll = Buffer.from('new shared nghttp2 fixture');
+    const jsonDll = Buffer.from('new shared WinRT JSON fixture');
+    const original = path.join(root, 'previous-nghttp2.dll');
+    await mkdir(path.dirname(wine), { recursive: true });
+    await mkdir(path.join(runtime, 'files/share/default_pfx'), { recursive: true });
+    await mkdir(path.join(runtime, 'files/lib/wine/x86_64-windows'), { recursive: true });
+    await mkdir(system32, { recursive: true });
+    await writeFile(wine, '#!/bin/sh\nprintf \'%s\\n\' "$WINEDLLOVERRIDES"\n');
+    await chmod(wine, 0o700);
+    await writeFile(path.join(runtime, 'proton'), '#!/bin/sh\nexit 0\n');
+    await chmod(path.join(runtime, 'proton'), 0o700);
+    for (const name of ['libvkd3d-utils-1.dll', 'dxgi.dll', 'd3d12.dll']) await writeFile(path.join(system32, name), 'ready');
+    await writeFile(path.join(runtime, 'files/lib/wine/x86_64-windows/libnghttp2.dll'), dll);
+    await writeFile(path.join(runtime, 'files/lib/wine/x86_64-windows/windows.web.dll'), jsonDll);
+    await writeFile(path.join(runtime, 'XODUS_NEXUS_PATCH.json'), JSON.stringify({ features: ['wine-winhttp-http2-v1', 'winrt-json-v1'], components: { 'libnghttp2.dll': createHash('sha256').update(dll).digest('hex'), 'windows.web.dll': createHash('sha256').update(jsonDll).digest('hex') } }));
+    if (oldSymlink) {
+      await writeFile(original, 'old runtime');
+      await symlink(original, path.join(system32, 'libnghttp2.dll'));
+      await symlink(original, path.join(system32, 'windows.web.dll'));
+    }
+    const runner = await prepareProtonRunner(wine, compat, path.join(root, 'steam'));
+    expect(await readFile(path.join(system32, 'libnghttp2.dll'))).toEqual(dll);
+    expect(await readFile(path.join(system32, 'windows.web.dll'))).toEqual(jsonDll);
+    if (oldSymlink) expect(await readFile(original, 'utf8')).toBe('old runtime');
+    const { stdout } = await execFile(runner!.command);
+    expect(stdout).toContain('winhttp=b;libnghttp2=n');
+    await prepareProtonRunner(wine, compat, path.join(root, 'steam'));
+    expect(await readFile(path.join(system32, 'libnghttp2.dll'))).toEqual(dll);
+    await writeFile(path.join(runtime, 'files/lib/wine/x86_64-windows/windows.web.dll'), 'corrupt');
+    await expect(prepareProtonRunner(wine, compat, path.join(root, 'steam'))).rejects.toThrow('windows.web.dll checksum');
+    expect(await readFile(path.join(system32, 'windows.web.dll'))).toEqual(jsonDll);
+    await writeFile(path.join(runtime, 'files/lib/wine/x86_64-windows/windows.web.dll'), jsonDll);
+    await writeFile(path.join(runtime, 'files/lib/wine/x86_64-windows/libnghttp2.dll'), 'corrupt');
+    await expect(prepareProtonRunner(wine, compat, path.join(root, 'steam'))).rejects.toThrow('checksum');
+    expect(await readFile(path.join(system32, 'libnghttp2.dll'))).toEqual(dll);
+  });
   it('initializes Proton, then executes Wine directly with the Proton environment', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'xodus-nexus-proton-'));
     created.push(root);

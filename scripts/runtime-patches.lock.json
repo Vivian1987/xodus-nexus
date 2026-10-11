@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "status": "development",
+  "sources": {
+    "wine": {
+      "url": "https://github.com/xodus-gaming/wine.git",
+      "commit": "b1dd32734a34472a28eb5be9922df06e07ac0834"
+    },
+    "xgameruntime": {
+      "url": "https://github.com/xodus-gaming/xgameruntime.git",
+      "commit": "64aebcabb8c66121eae25d3bf0ace4b582ebb0da"
+    },
+    "nghttp2": {
+      "url": "https://github.com/nghttp2/nghttp2.git",
+      "commit": "85e300c79fb6dbcfa9c1013215c8710c1c2cd3d2",
+      "version": "1.70.0"
+    }
+  },
+  "patches": [
+    {
+      "file": "assets/xgameruntime-shared-foundation.patch",
+      "sha256": "7b2b0d5b4145c44699ecc9f58ee4965c3cd777580c2ef64ceae91ae61cad290c"
+    },
+    {
+      "file": "assets/xgameruntime-taskqueue-lifecycle-experimental.patch",
+      "sha256": "1246b44e9ea56fa9ed784c5eb8940284a0d186012bddd36e9a04ae29748c1d4d"
+    },
+    {
+      "file": "assets/xgameruntime-async-provider-experimental.patch",
+      "sha256": "fd449495b2d2cf97343816e891962e6d34dcecd42abfd2a7315f399ccb285539"
+    },
+    {
+      "file": "assets/wine-winhttp-http2.patch",
+      "sha256": "9c123a95a43120a239669faa45358fe94828125f53aa34ff34b0ce9e60189b3e"
+    },
+    {
+      "file": "assets/wine-winhttp-private-diagnostics-disabled.patch",
+      "sha256": "f7ec44ddd9629ad73cd6c74a8e30611bddb71800ef28fbfdaced5f0a61ae06c0"
+    },
+    {
+      "file": "assets/wine-mscoree-mono-path-bounds.patch",
+      "sha256": "b9ba21027ad489b8c364c4c3c919722bbdd38d75a28add1df27951978139803a"
+    }
+  ],
+  "expectedXgameruntimeSources": {
+    "dlls/xgameruntime/Makefile.in": "0425398d958c253ab1a488734fbf74996e193c26871e24752a7c811d122b9279",
+    "dlls/xgameruntime/main.c": "4a8e82963075d60eecb5a1a7b6d96e310b0c13fef48ebcfbacf54ef1d7d23957",
+    "dlls/xgameruntime/private.h": "75f33116244bb6f4c82eb00dffe811971bc59dbf87832812df82f6f00d61224f",
+    "dlls/xgameruntime/xerror.c": "f0dc4b456af5c4cfdcc1036f1dd422848a1ce97abd6cd1722bf654c51927b694",
+    "dlls/xgameruntime/xgame.c": "7d7edff91a839cac522f910c54d4625d8efa61121c7a32f4bd3665cca184abae",
+    "dlls/xgameruntime/xgameactivation.c": "48a729040d7be7aac3e28b27aa06f8285bcef3f27767fa79ddfbe33c7b629dbc",
+    "dlls/xgameruntime/xgameinvite.c": "43c3459101f7da3a4bc6569d361f2d5f63f6a0e70006a0472c4ccb6f9bece41f",
+    "dlls/xgameruntime/xgameprotocol.c": "6936d5e24532832ee2e6928ea3a9a5217f8df830588b2e6e92920dd2cf1532d3",
+    "dlls/xgameruntime/xgameruntime.spec": "e2418b8dafca476ae2119228e74e5cf23987e3a7b9a5bde3c0cb150f1c2823da",
+    "dlls/xgameruntime/xgamesave.c": "c7c767edd7d38bf4981ee3d8367055f03bd3d337f372a55743f06f40e4cdb4b7",
+    "dlls/xgameruntime/xgamesave.idl": "544319e88951f65b21c74f785fb9376c10cac8b1d57e98c7aa3079348162ccab",
+    "dlls/xgameruntime/xnetworking.c": "e4e33f09b2be409dcedc4ec6c4aad1b810890f6cc34cd83de654e93bac2f5b96",
+    "dlls/xgameruntime/xpackage.c": "efd41ec751cae13428a976608f2e68041919fd7db6093c1c41c94d9fca7ce736",
+    "dlls/xgameruntime/xpackage.idl": "afb602c0f76a97f6358950baf48e7a49df61e150134989b676879e7001a60108",
+    "dlls/xgameruntime/xpersistentlocalstorage.c": "48111212dcfe4ef328fa482dc8b426ef853b7c961d575aefeaa3b559788809b2",
+    "dlls/xgameruntime/xstore.c": "6a8b5275edcde0d3c28d00544ee4f26c6cb43d3015d854c198eecbac0571d849",
+    "dlls/xgameruntime/xsystem.c": "974c83fe2e1b97e6b2c86e95a558b31d2effe6b9d2b3166c2c4d1882a4341058",
+    "dlls/xgameruntime/xsystemanalytics.c": "189e99c83273b429325ecefa2b9246c45863c22f0c4006a791ec57b8f7b9d384",
+    "dlls/xgameruntime/xthreading.c": "6679fa0c92e40821f53d86037ce7a053e78f5f687c6e80a6d1e0d47c9b8e871b",
+    "dlls/xgameruntime/xuser.c": "76a3bee331750157ba1c13f656aeb8d839624130b1bd2b2ab155198f0faa5040",
+    "dlls/xgameruntime/util.c": "aebf1a7ebef0dff89d3a1683bc40e16c821eaeb5cc1160ce474b905d14d7cb5c",
+    "dlls/xgameruntime/util.h": "b739dba8a69a36103e72afc8dcaeaf324470d9ed47a5a7dd81b18e4e511ae69a",
+    "dlls/xgameruntime/userprovider.idl": "66fb09670b7dabfc55257475094239018ea9a19ec2be348e56cf2b17ef615d7a"
+  },
+  "limitations": [
+    "Incomplete XAsync cancellation/resource reclamation",
+    "Partial package/event/privilege APIs are not complete GDK implementations",
+    "Single HTTP/2 stream per connection; chunked uploads and proxy/client-certificate transport gaps",
+    "Wine assertion observed after manual game exit; cause unresolved",
+    "No multiplayer match or all-title compatibility claim"
+  ]
+}

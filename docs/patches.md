@@ -2,9 +2,9 @@
 
 Xodus Nexus builds on three upstream projects: the [xodus](https://github.com/xodus-gaming/xodus)
 CLI, [xodus-gaming/wine](https://github.com/xodus-gaming/wine) and
-[xgameruntime](https://github.com/xodus-gaming/xgameruntime). Every behavioral
-difference we need lives in a versioned patch file in [`assets/`](../assets) —
-nothing is applied by editing upstream checkouts in place, and the launcher
+[xgameruntime](https://github.com/xodus-gaming/xgameruntime). Released behavioral
+differences live in versioned patch files in [`assets/`](../assets) —
+managed builds do not modify the user's upstream checkout, and the launcher
 records in `XODUS_NEXUS_PATCH.json` which patches (and upstream commits) each
 managed build contains.
 
@@ -182,21 +182,56 @@ after an application restart without touching tokens or the keychain.
 
 ## In development
 
+- **Complete shared runtime foundation** (`xgameruntime-shared-foundation.patch`):
+  exports the full PR #28 plus subsequent cloud-save/auth/Store/package/event/
+  system development line against pinned xgameruntime 64aebcab. It includes
+  Mistral's API additions and supersedes the older piecemeal preview patches
+  for the new recipe only. The source lock verifies all 23 changed/added
+  XGameRuntime files after the two threading increments below.
+  Build instructions: [`scripts/SHARED_RUNTIME.md`](../scripts/SHARED_RUNTIME.md).
+
+- **XTaskQueue lifecycle** (`xgameruntime-taskqueue-lifecycle-experimental.patch`):
+  prevents composite termination from announcing completion before callbacks
+  drain, retains queues while callbacks are pending, protects shared-port lists,
+  and corrects submission/termination monitor notifications. Native ABI tests
+  and exact preimage requirements are documented in
+  [`scripts/runtime-tests/README.md`](../scripts/runtime-tests/README.md).
+  This experimental increment is included in the clean shared-runtime build
+  recipe. Apply it after the foundation and before the XAsync provider increment
+  below, from the Wine source root. It is not yet a published runtime release.
+
+- **XAsync provider lifecycle** (`xgameruntime-async-provider-experimental.patch`):
+  experimental provider error/completion handling and runtime-owned blocks,
+  with focused native ABI regressions. Requires the queue development increment
+  above and is included in the clean shared-runtime recipe. Full cancellation/resource
+  reclamation remain incomplete. The combined development runtime was tested
+  by the user through entry into the Gears online lobby. This does not establish
+  multiplayer-match stability, all-game support, or EAC attestation internals.
+  A separate assertion after manual exit remains unresolved. Patch order,
+  source hashes, candidate DLL hash and test results are documented in
+  [`scripts/runtime-tests/README.md`](../scripts/runtime-tests/README.md).
+
 - **WinHTTP HTTP/2 support (Wine `winhttp`)**: a native HTTP/2 implementation
   for Wine's `winhttp`, developed and tested against the real Microsoft
-  title services (regression suite: 14 checks). Not yet finalized as an
-  `assets/*.patch` file; will be added here once the remaining transport gaps
-  (chunked upload, multiplexing, proxy CONNECT, client certificates) are
-  closed.
-- **Easy Anti-Cheat online play**: the bootstrapper can map the module, but
-  successful client-session initialization and server attestation have not
-  been demonstrated. A missing legacy bridge is not sufficient to identify
+  title services (regression suite: 14 checks). Exported as
+  `wine-winhttp-http2.patch` with portable pinned nghttp2 headers/dependency.
+  `wine-winhttp-private-diagnostics-disabled.patch` disables the historical
+  body-fragment logger to avoid token leakage. Both are included in the new
+  clean build. Remaining transport gaps include chunked uploads, multiplexing,
+  proxy CONNECT and client certificates.
+- **Easy Anti-Cheat online play**: the current development runtime reaches the
+  Gears online lobby in a user-confirmed test. A multiplayer match and internal
+  server attestation have not separately been verified. A missing legacy bridge
+  is not sufficient to identify
   the cause of an EOS identity failure. See [EAC diagnostics](eac-diagnostics.md).
-  Under investigation; no online-play fix is claimed.
+  Full shared-runtime packaging and release validation remain in development.
 
 ## Applying the patches
 
-Nothing needs to be applied by hand:
+Released patches do not need to be applied by hand. The updated workflow builds
+the complete development line using the locked clean recipe, but publication
+is blocked while the source lock remains marked development. See
+[`scripts/SHARED_RUNTIME.md`](../scripts/SHARED_RUNTIME.md) for local verification.
 
 - The **xodus** patches are applied by the launcher's managed backend build
   (`Settings → Backend`), which clones upstream `xodus`, applies the patch
@@ -206,7 +241,8 @@ Nothing needs to be applied by hand:
 - The **xgameruntime/Wine** patches ship in the **Xodus Nexus runtime**: a
   prebuilt release published from this repository's CI
   (`.github/workflows/runtime.yml`). It is the official Xodus Proton snapshot
-  with the patched `xgameruntime.dll`, downloaded and verified by the
+  pinned by `scripts/runtime-base.lock.json`, with all five shared components
+  (XGameRuntime, WinHTTP, nghttp2, Mono and WinRT JSON), downloaded and verified by the
   launcher from `Settings → Xodus Runtime → Install Nexus runtime` — no
   local compilation, no GitHub CLI authentication. The launcher automatically
   offers it whenever a published release exists.

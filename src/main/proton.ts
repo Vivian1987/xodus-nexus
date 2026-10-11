@@ -1,4 +1,5 @@
 import { constants, promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { run } from './process.js';
 import { installedEacRuntime } from './anti-cheat.js';
@@ -306,10 +307,41 @@ export async function prepareProtonRunner(
   // module with the older libraries/plugins from the base Proton archive.
   // This is a runtime capability, never a per-game exception.
   let hostLibraries = false;
+  let http2Runtime = false;
+  let jsonRuntime = false;
   try {
-    const metadata = JSON.parse(await fs.readFile(path.join(protonRoot, 'XODUS_NEXUS_PATCH.json'), 'utf8')) as { features?: unknown };
+    const metadata = JSON.parse(await fs.readFile(path.join(protonRoot, 'XODUS_NEXUS_PATCH.json'), 'utf8')) as { features?: unknown; components?: Record<string, string> };
     hostLibraries = Array.isArray(metadata.features) && metadata.features.includes('wine-host-libraries-v1');
-  } catch { /* Stock Proton keeps its bundled library environment. */ }
+    http2Runtime = Array.isArray(metadata.features) && metadata.features.includes('wine-winhttp-http2-v1');
+    jsonRuntime = Array.isArray(metadata.features) && metadata.features.includes('winrt-json-v1');
+    const components = [ ...(http2Runtime ? ['libnghttp2.dll'] : []), ...(jsonRuntime ? ['windows.web.dll'] : []) ];
+    // Validate every component before changing any prefix entry.
+    const verified = await Promise.all(components.map(async (name) => {
+      // WinHTTP loads nghttp2 with LOAD_LIBRARY_SEARCH_SYSTEM32. WINEDLLPATH
+      // alone is insufficient in existing prefixes. Validate before replacing
+      // a directory entry so symlinks cannot overwrite another runtime.
+      const source = path.join(files, 'lib/wine/x86_64-windows', name);
+      const expected = metadata.components?.[name];
+      const bytes = await fs.readFile(source);
+      if (!expected || createHash('sha256').update(bytes).digest('hex') !== expected) throw new Error(`The shared runtime has an invalid ${name} checksum.`);
+      return { name, bytes };
+    }));
+    for (const { name, bytes } of verified) {
+      const target = path.join(compatibilityDataPath, 'pfx/drive_c/windows/system32', name);
+      let current: Buffer | undefined;
+      try { current = await fs.readFile(target); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      if (!current?.equals(bytes)) {
+        const temporary = `${target}.nexus-${process.pid}`;
+        try {
+          await fs.writeFile(temporary, bytes, { flag: 'wx', mode: 0o644 });
+          await fs.rename(temporary, target);
+        } finally { await fs.unlink(temporary).catch(() => undefined); }
+      }
+    }
+  } catch (error) {
+    if (http2Runtime || jsonRuntime) throw error;
+    // Stock Proton keeps its bundled library environment.
+  }
   const libraryDirectories = [
     path.join(files, 'lib', 'x86_64-linux-gnu'),
     path.join(files, 'lib', 'aarch64-linux-gnu'),
@@ -337,7 +369,7 @@ export async function prepareProtonRunner(
     `export MEDIACONV_BLANK_VIDEO_FILE=${shellQuote(path.join(files, 'share', 'media', 'blank.mkv'))}`,
     `export MEDIACONV_BLANK_AUDIO_FILE=${shellQuote(path.join(files, 'share', 'media', 'blank.ptna'))}`,
     `export PATH=${shellQuote(executablePath)}`,
-    "export WINEDLLOVERRIDES='dxgi=n;d3d11=n;d3d10core=n;d3d9=n;d3d12=n;d3d12core=n'",
+    `export WINEDLLOVERRIDES='dxgi=n;d3d11=n;d3d10core=n;d3d9=n;d3d12=n;d3d12core=n${http2Runtime ? ';winhttp=b;libnghttp2=n' : ''}'`,
     "export WINE_LARGE_ADDRESS_AWARE='1'",
     // Use Steam's genuine compatibility bridge when installed. Never force a
     // particular game to load it or replace an explicit user configuration.

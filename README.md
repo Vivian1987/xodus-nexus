@@ -99,6 +99,11 @@ npm run dist     # AppImage build
 Patches in `assets/` are developed against the upstream xodus-gaming
 repositories and are intended to be contributed back.
 
+For the complete shared runtime (cloud-save/auth/API additions plus queue,
+XAsync and HTTP/2 fixes), use the [pinned clean-build recipe](scripts/SHARED_RUNTIME.md).
+It creates a separate development candidate and runs native contract probes;
+it never replaces an active runtime or edits games/saves.
+
 ## License
 
 [MIT](LICENSE)
