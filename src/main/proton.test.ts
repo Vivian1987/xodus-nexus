@@ -44,6 +44,30 @@ describe('prepareProtonRunner', () => {
     expect(await prepareProtonRunner(path.join(root, 'bin', 'wine'), path.join(root, 'compat'), path.join(root, 'steam'))).toBeUndefined();
   });
 
+  it.each(['', '/explicit/eac'])('discovers the installed EAC bridge without overriding configuration (%s)', async (explicit) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'xodus-nexus-eac-runner-'));
+    created.push(root);
+    const files = path.join(root, 'runtime/files');
+    const wine = path.join(files, 'bin/wine');
+    const steam = path.join(root, "Steam's library");
+    const eac = path.join(steam, 'steamapps/common/Proton EasyAntiCheat Runtime');
+    const compat = path.join(root, 'compat');
+    const system32 = path.join(compat, 'pfx/drive_c/windows/system32');
+    await mkdir(path.dirname(wine), { recursive: true });
+    await mkdir(path.join(files, 'share/default_pfx'), { recursive: true });
+    await mkdir(system32, { recursive: true });
+    for (const dll of ['libvkd3d-utils-1.dll', 'dxgi.dll', 'd3d12.dll']) await writeFile(path.join(system32, dll), 'ready');
+    await writeFile(wine, '#!/bin/sh\nprintf \'%s\\n\' "$PROTON_EAC_RUNTIME"\n');
+    await chmod(wine, 0o700);
+    await writeFile(path.join(files, '../proton'), '#!/bin/sh\nexit 0\n');
+    await chmod(path.join(files, '../proton'), 0o700);
+    await mkdir(path.join(eac, 'v2/lib64'), { recursive: true });
+    for (const name of ['easyanticheat_x64.dll', 'easyanticheat_x64.so']) await writeFile(path.join(eac, 'v2/lib64', name), 'fixture');
+    const runner = await prepareProtonRunner(wine, compat, steam);
+    const { stdout } = await execFile(runner!.command, [], { env: { ...process.env, PROTON_EAC_RUNTIME: explicit } });
+    expect(stdout.trim()).toBe(explicit || eac);
+  });
+
   it.each([0, 23])('waits for launcher descendants and preserves launcher exit %s', async (launcherExit) => {
     const root = await mkdtemp(path.join(tmpdir(), 'xodus-nexus-proton-descendants-'));
     created.push(root);

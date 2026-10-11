@@ -13,10 +13,10 @@ client. A verified Store package is **not** a guarantee that a game launches.
 
 ## Experimental / known limitations
 
-- **Easy Anti-Cheat**: offline play works through the metadata-driven
-  offline route (no EAC). Online play requiring EAC attestation does not
-  work yet; the EAC client module currently loads without an initialized
-  bridge. See
+- **Easy Anti-Cheat**: an EAC-free route exists for supported installations,
+  but offline transitions can still fail. EAC-protected online play is not
+  verified. Bootstrapper success and module loading do not establish client
+  attestation. See [EAC diagnostics](../eac-diagnostics.md) and
   [docs/patches.md](https://github.com/domsvoboda/xodus-nexus/blob/main/docs/patches.md)
   for the current state.
 - **In-game Xbox services** (XUser sign-in, cloud saves, achievements) run

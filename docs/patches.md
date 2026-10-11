@@ -188,9 +188,11 @@ after an application restart without touching tokens or the keychain.
   `assets/*.patch` file; will be added here once the remaining transport gaps
   (chunked upload, multiplexing, proxy CONNECT, client certificates) are
   closed.
-- **Easy Anti-Cheat online play**: the EAC client module currently loads as a
-  mapped image without an initialized bridge, which blocks online
-  attestation on at least one title. Under investigation; no fix is claimed.
+- **Easy Anti-Cheat online play**: the bootstrapper can map the module, but
+  successful client-session initialization and server attestation have not
+  been demonstrated. A missing legacy bridge is not sufficient to identify
+  the cause of an EOS identity failure. See [EAC diagnostics](eac-diagnostics.md).
+  Under investigation; no online-play fix is claimed.
 
 ## Applying the patches
 

@@ -20,6 +20,7 @@ import { downloadVerifiedVcRedist, installedVcRuntimeVersion, VC_REDIST_VERSION,
 import { validateGameTrashTarget } from './game-removal.js';
 import { spawnGameProcess, type GameProcess } from './game-process.js';
 import { gameLocaleEnvironment, manifestLocales, manifestTitleId, supportedGameLocale } from './game-locale.js';
+import { antiCheatEnvironment } from './anti-cheat.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -454,9 +455,9 @@ async function launchGame(id: string): Promise<void> {
       }
       addGameLog(`VC++ runtime ${installed} verified; launching the original package executable from a temporary decrypted launch view.`);
     }
-    const environment = gameLocaleEnvironment(gameWindowEnvironment(gameLoggingEnvironment(protonRunner
+    const environment = antiCheatEnvironment(gameLocaleEnvironment(gameWindowEnvironment(gameLoggingEnvironment(protonRunner
       ? { ...process.env }
-      : { ...process.env, WINEPREFIX: legacyPrefixRoot, WINEARCH: 'win64' }, verboseLogs)), locale);
+      : { ...process.env, WINEPREFIX: legacyPrefixRoot, WINEARCH: 'win64' }, verboseLogs)), locale), offlineLaunch);
     if (locale) {
       addGameLog(`Selected package language: ${locale}.`);
       await syncPrefixUserLocale(wineCommand, protonRunner ? path.join(compatibilityDataPath, 'pfx') : legacyPrefixRoot, locale, environment, addGameLog);
@@ -471,7 +472,6 @@ async function launchGame(id: string): Promise<void> {
       environment.XODUS_SAVE_SYNC = 'auto';
       addGameLog('Xbox cloud save preview is enabled. Saves may download from and upload to the account cloud.');
     }
-    if (offlineLaunch) environment.EOS_USE_ANTICHEATCLIENTNULL = '1';
     if (protonRunner) addGameLog(`Proton prefix: ${protonRunner.compatibilityDataPath}/pfx`);
     else await fs.mkdir(legacyPrefixRoot, { recursive: true });
     const tracked = await spawnGameProcess(binary, args, {

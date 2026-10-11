@@ -1,6 +1,7 @@
 import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { run } from './process.js';
+import { installedEacRuntime } from './anti-cheat.js';
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
@@ -319,6 +320,7 @@ export async function prepareProtonRunner(
   const gstPlugins = hostLibraries ? '/usr/lib/gstreamer-1.0' : libraryDirectories.map((directory) => path.join(directory, 'gstreamer-1.0')).join(':');
   const wineDllPath = [path.join(files, 'lib', 'vkd3d'), path.join(files, 'lib', 'wine')].join(':');
   const executablePath = [path.join(files, 'bin'), process.env.PATH ?? ''].filter(Boolean).join(':');
+  const eacRuntime = await installedEacRuntime(steamRoot);
   const runner = path.join(compatibilityDataPath, 'xodus-proton-wine');
   const temporary = `${runner}.tmp-${process.pid}`;
   const script = [
@@ -337,6 +339,13 @@ export async function prepareProtonRunner(
     `export PATH=${shellQuote(executablePath)}`,
     "export WINEDLLOVERRIDES='dxgi=n;d3d11=n;d3d10core=n;d3d9=n;d3d12=n;d3d12core=n'",
     "export WINE_LARGE_ADDRESS_AWARE='1'",
+    // Use Steam's genuine compatibility bridge when installed. Never force a
+    // particular game to load it or replace an explicit user configuration.
+    ...(eacRuntime ? [
+      'if [ -z "${PROTON_EAC_RUNTIME:-}" ]; then',
+      `  export PROTON_EAC_RUNTIME=${shellQuote(eacRuntime)}`,
+      'fi',
+    ] : []),
     // Launchers (including EAC) may finish before the game they spawned.
     // Keep Xodus and its temporary launch view/account service alive until
     // the isolated game prefix has no remaining Wine processes.
