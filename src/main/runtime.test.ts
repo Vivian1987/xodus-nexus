@@ -45,7 +45,7 @@ describe('previewBaseRelease', () => {
     const manager = new RuntimeManager('/tmp/unused', () => undefined, () => false, fetcher);
     const status = await manager.checkNexus();
     expect(status.nexusAvailable).toBe(false);
-    expect(status.nexusError).toContain('No release with a Nexus runtime');
+    expect(status.nexusError).toContain('No Nexus runtime release has been published yet');
   });
 
   it('ignores previews, unrelated archives and mismatched checksum pairs', async () => {

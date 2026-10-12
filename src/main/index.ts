@@ -938,6 +938,7 @@ app.whenReady().then(async () => {
   backend = new BackendManager(app.getPath('userData'), store.settings.externalXodusRoot, emitLog, () => operations.size > 0 || runtime?.current.updating === true);
   await backend.refresh();
   await runtime.refresh();
+  void backend.checkUpdate().then(() => emitSnapshot(), () => { /* Keep the installed backend available if GitHub is unreachable. */ });
   void runtime.checkNexus().then(() => emitSnapshot(), () => { /* Nexus runtime is optional. */ });
   await syncManagedWinePath();
   await refreshAccount(false);

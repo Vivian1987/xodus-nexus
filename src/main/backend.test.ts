@@ -106,7 +106,9 @@ describe('prebuilt backend', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'backend-absent-test-'));
     try {
       const manager = new BackendManager(root, '', () => {}, () => false, fetcher);
-      expect((await manager.checkUpdate()).releaseAvailable).toBe(false);
+      const status = await manager.checkUpdate();
+      expect(status.releaseAvailable).toBe(false);
+      expect(status.blockReason).toBe('No compatible Nexus backend release has been published yet.');
       await expect(manager.update(() => {})).rejects.toThrow('No compatible');
       await expect(fs.stat(path.join(root, 'xodus-backends/current.json'))).rejects.toThrow();
     } finally { await fs.rm(root, { recursive: true, force: true }); }

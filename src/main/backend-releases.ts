@@ -37,7 +37,7 @@ export async function discoverBackend(fetcher: typeof fetch): Promise<BackendArt
   const tag = `backend-v${backendLock.version}`;
   const release = releases.find(item => !item.draft && !item.prerelease && item.tag_name === tag);
   const asset = (name: string) => backendAssetUrl(tag, name, release?.assets?.find(item => item.name === name)?.browser_download_url);
-  if (!release) throw new Error('No compatible Nexus backend release is published. If the repository is private, public downloads are unavailable.');
+  if (!release) throw new Error('No compatible Nexus backend release has been published yet.');
   const archive = `${backendPackageName}.tar.xz`;
   const manifest = validateBackendManifest(JSON.parse((await bytes(asset(`${backendPackageName}.manifest.json`), fetcher, 100_000)).toString()));
   const checksum = (await bytes(asset(`${backendPackageName}.sha512sum`), fetcher, 1000)).toString().trim();

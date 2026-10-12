@@ -32,7 +32,7 @@ export function demoSnapshot(coverUrls: ReadonlyMap<string, string> = new Map())
       version: '0.1.0', delivery: 'release', releaseAvailable: true, releaseVersion: '0.1.0',
     },
     runtime: {
-      installed: true, checking: false, updating: false, runtimeRoot: '/home/demo/.local/share/xodus-nexus/runtimes', name: 'xodus-nexus-runtime-11.0-20261011-g3fd4ae10', winePath: '/home/demo/.local/share/xodus-nexus/runtimes/releases/xodus-nexus-runtime-11.0-20261011-g3fd4ae10/files/bin/wine', commit: 'af521bf321581c78072a147a74bb9527750a109a', nexusAvailable: true, nexusVersion: 'runtime-11.0-20261011-g3fd4ae10', artifactAvailable: false,
+      installed: true, checking: false, updating: false, runtimeRoot: '/home/demo/.local/share/xodus-nexus/runtimes', name: 'xodus-nexus-runtime-11.0-20261011-g3fd4ae10', winePath: '/home/demo/.local/share/xodus-nexus/runtimes/releases/xodus-nexus-runtime-11.0-20261011-g3fd4ae10/files/bin/wine', commit: 'af521bf321581c78072a147a74bb9527750a109a', nexusAvailable: true, nexusName: 'xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.tar.xz', nexusVersion: 'runtime-11.0-20261011-g3fd4ae10', artifactAvailable: false,
       prerequisites: { gh: true, authenticated: true, tar: true, sha512sum: true },
     },
     games: structuredClone([...demoGames.slice(1, 2), ...demoGames.slice(0, 1), ...demoGames.slice(2)]).map((game) => ({ ...game, coverUrl: game.storeId ? coverUrls.get(game.storeId) : undefined })),

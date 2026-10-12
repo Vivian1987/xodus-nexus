@@ -144,7 +144,9 @@ export class BackendManager {
       this.artifact = undefined;
       this.status.releaseAvailable = false;
       this.status.updateAvailable = false;
-      this.status.blockReason = `Backend release check failed: ${(error as Error).message}`;
+      const message = (error as Error).message;
+      this.status.blockReason = message.startsWith('No compatible Nexus backend release')
+        ? message : `Backend release check failed: ${message}`;
     } finally { this.status.checking = false; }
     return this.current;
   }

@@ -296,7 +296,7 @@ export class RuntimeManager {
         const checksum = archive && assets.find((asset) => asset.name === archive.name.replace(/\.tar\.xz$/, '.sha512sum'));
         if (archive && checksum) { found = { version, archive, checksum }; break; }
       }
-      if (!found) throw new Error('No release with a Nexus runtime archive was found.');
+      if (!found) throw new Error('No Nexus runtime release has been published yet.');
       this.nexusArtifact = {
         version: found.version,
         name: found.archive.name,
