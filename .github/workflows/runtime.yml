@@ -115,6 +115,8 @@ jobs:
             shared-build/runtime shared-build
 
       - name: Package verified runtime and corresponding source
+        env:
+          XZ_OPT: '-T2'
         run: |
           set -euo pipefail
           nexus_version="11.0-$(date -u +%Y%m%d)-g${GITHUB_SHA:0:8}"

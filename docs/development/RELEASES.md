@@ -2,9 +2,14 @@
 
 CI/checks builds the small launcher candidate; Nexus runtime build conditionally
 builds clean runtime components and native tests. Pushes and PRs never publish.
+Working-branch pushes are checkpoints; opening/updating the draft PR runs CI.
+Pushes to develop/main also run CI, avoiding duplicate feature-push/PR builds.
 Candidates carry candidate.json (exact commit, repository, run ID, ref and file
 hashes), SHA-512 sidecars and corresponding runtime source. Download the exact
 artifact with gh run download; verify its manifest and test it locally.
+For a PR artifact, its manifest commit is the synthetic PR merge SHA actually
+built, not necessarily the run API's feature head SHA. PR candidates cannot be
+promoted; final stable candidates must come from successful main builds.
 
 Artifacts expire: launcher 3 days, runtime 7 days. If a tested artifact expires,
 build and TEST a new candidate; never describe a different rebuild as tested.

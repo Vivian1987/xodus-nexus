@@ -8,8 +8,9 @@
 | Same v4 DLLs on locked Xodus base | Native/auth probes passed; user said game looked good; no explicit played-match claim |
 | Launcher before workflow changes | 89 Vitest + 14 node:test, renderer disclosure tests and AppImage boot passed locally |
 | Old runtime CI38176544194 | FAILED: JSON probe header missing on Ubuntu; not proof the five DLL builds failed |
-| Wine-header JSON probe fix | Compiles locally; fresh remote clean CI still to be verified |
-| New CI candidate / cloud uploads / all titles | Not yet verified; do not claim compatibility from the rows above |
+| Clean runtime CI38223286437 | SUCCESS: clean component/base build, 4194 native + 14 HTTP/2 checks / 0 failures, source packaging and candidate upload; downloaded checksum manifest verified |
+| New launcher CI38223286448 | SUCCESS; exact downloaded AppImage verified and booted in isolated demo smoke mode; not a real game/account test |
+| Real Gears with new CI runtime / cloud uploads / all titles | Not yet verified; do not claim compatibility from the rows above |
 
 ## Required candidate record
 

@@ -8,6 +8,9 @@ Read this file, `docs/development/STATUS.md`, `DECISIONS.md` and `TEST_MATRIX.md
 Inspect `git status`, branch and recent commits; do not assume the last chat is
 current. Preserve unfinished work. Only one agent owns a shared working tree at
 a time. Use separate branches/checkouts for concurrent work, with human approval.
+STATUS owner identifies the last active agent, not a permanent background lock.
+An explicit human request to take over transfers ownership after checking that
+the other agent is not still writing. Record the takeover before new changes.
 
 ## Development and handoff
 
