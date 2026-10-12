@@ -16,18 +16,14 @@ Browse the Store, install games you own or can access through a subscription,
 and play with one shared runtime. Xbox sign-in and cloud saves are available
 for supported games.
 
-![Xodus Nexus home](docs/screenshots/demo-home.png)
+![Xodus Nexus demo](docs/screenshots/demo.gif)
 
 *Demo UI with a sample library and queue; screenshots are not compatibility claims.*
 
 ## Get started
 
-**0.1.0 is being prepared as the first release.** The AppImage contains the
-launcher; it downloads its runtime separately. Release downloads currently
-require access to this private repository.
-
 [Downloads](https://github.com/domsvoboda/xodus-nexus/releases) ·
-[Setup & documentation](https://github.com/domsvoboda/xodus-nexus/wiki) *(wiki pending)* ·
+[Setup & documentation](https://github.com/domsvoboda/xodus-nexus/wiki) ·
 [Report an issue](https://github.com/domsvoboda/xodus-nexus/issues)
 
 ## Compatible games
@@ -36,10 +32,7 @@ require access to this private repository.
 | --- | --- |
 | Gears of War: E-Day | Launch, account sign-in, existing saves, online lobby |
 
-Tested on the development runtime. An online lobby is not a completed
-multiplayer-match test, and compatibility depends on the runtime and game version.
-More reports and known issues will live in the
-[Compatibility wiki](https://github.com/domsvoboda/xodus-nexus/wiki/Compatibility).
+[Full compatibility list](https://github.com/domsvoboda/xodus-nexus/wiki/Compatibility)
 
 ## Screenshots
 
