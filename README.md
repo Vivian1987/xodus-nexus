@@ -28,9 +28,11 @@ for supported games.
 
 ## Compatible games
 
-| Game | Tested features |
-| --- | --- |
-| Gears of War: E-Day | Launch, account sign-in, existing saves, online lobby |
+| Game | Playable | Status |
+| --- | --- | --- |
+| Gears of War: E-Day | Yes | Launch, account sign-in, existing saves and online lobby work. |
+| Deep Rock Galactic | Yes | Account sign-in and game lobby work; no DRG servers appear in the server browser. |
+| Minecraft Dungeons II | No | Stuck at Signing in. |
 
 [Full compatibility list](https://github.com/domsvoboda/xodus-nexus/wiki/Compatibility)
 
