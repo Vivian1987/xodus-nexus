@@ -1,18 +1,40 @@
 name: Nexus runtime build
 
 on:
+  push:
+    branches: [main, develop]
+  pull_request:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish release (requires a release-approved source lock)'
-        type: boolean
-        default: false
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      needed: ${{ steps.diff.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          FORCE_RUNTIME: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/ci/runtime-needed.mjs
   build:
+    needs: changes
+    if: needs.changes.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -20,18 +42,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Validate release and base selection
-        env:
-          PUBLISH: ${{ inputs.publish }}
-        run: |
-          set -euo pipefail
-          node --input-type=module -e '
-            import fs from "node:fs";
-            const lock=JSON.parse(fs.readFileSync("scripts/runtime-patches.lock.json"));
-            if(process.env.PUBLISH==="true" && lock.status!=="release")
-              throw Error("Development runtime is not approved for publication.");
-          '
 
       - name: Install build and test prerequisites
         run: |
@@ -55,7 +65,7 @@ jobs:
             scripts/runtime-patches.lock.json
             scripts/runtime-base.lock.json
             scripts/SHARED_RUNTIME.md
-          retention-days: 14
+          retention-days: 3
 
       - name: Resolve exact official Proton snapshot
         env:
@@ -131,24 +141,38 @@ jobs:
       - name: Upload verified runtime
         uses: actions/upload-artifact@v4
         with:
+          name: runtime-test-results
+          path: |
+            shared-build/runtime-contract-*/results.json
+            shared-build/runtime-http2-*/results.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Bind candidate to source and checksums
+        run: node scripts/ci/artifact-manifest.mjs write runtime shared-build
+
+      - name: Upload runtime candidate (never publish)
+        uses: actions/upload-artifact@v4
+        with:
           name: nexus-runtime
           path: |
             shared-build/${{ env.nexus_name }}-x86_64.tar.xz
             shared-build/${{ env.nexus_name }}-x86_64.sha512sum
             shared-build/${{ env.nexus_name }}-source.tar.xz
-            shared-build/runtime-contract-*/results.json
-            shared-build/runtime-http2-*/results.json
-          retention-days: 14
+            shared-build/${{ env.nexus_name }}-source.sha512sum
+            shared-build/candidate.json
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Publish release-approved runtime
-        if: ${{ inputs.publish }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  runtime-gate:
+    runs-on: ubuntu-24.04
+    needs: [changes, build]
+    if: always()
+    steps:
+      - env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BUILD_NEEDED: ${{ needs.changes.outputs.needed }}
+          BUILD_RESULT: ${{ needs.build.result }}
         run: |
-          gh release create "runtime-$nexus_version" --target "$GITHUB_SHA" \
-            --repo "$GITHUB_REPOSITORY" \
-            "shared-build/$nexus_name-x86_64.tar.xz" \
-            "shared-build/$nexus_name-x86_64.sha512sum" \
-            "shared-build/$nexus_name-source.tar.xz" \
-            --title "Xodus Nexus runtime $nexus_version" \
-            --notes "Pinned shared runtime build with native contract tests. Source lock and component checksums are included; see scripts/SHARED_RUNTIME.md."
+          test "$CHANGES_RESULT" = success
+          if [ "$BUILD_NEEDED" = true ]; then test "$BUILD_RESULT" = success; fi

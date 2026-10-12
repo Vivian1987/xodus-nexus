@@ -48,7 +48,28 @@ describe('previewBaseRelease', () => {
     expect(status.nexusError).toContain('No release with a Xodus Nexus runtime');
   });
 
-  it('installs a downloaded Nexus runtime under its versioned release name', async () => {
+  it('ignores previews, unrelated archives and mismatched checksum pairs', async () => {
+    const name = 'xodus-nexus-runtime-11.0-tested-x86_64.tar.xz';
+    const asset = (file: string) => ({ name: file, browser_download_url: `https://example.com/${file}` });
+    const pair = [asset(name), asset(name.replace('.tar.xz', '.sha512sum'))];
+    const fetcher = (async () => new Response(JSON.stringify([
+      { tag_name: 'draft', draft: true, assets: pair },
+      { tag_name: 'preview', prerelease: true, assets: pair },
+      { tag_name: 'unrelated', assets: [asset('other-x86_64.tar.xz'), asset('other-x86_64.sha512sum')] },
+      { tag_name: 'mismatched', assets: [asset(name), asset('xodus-nexus-runtime-different-x86_64.sha512sum')] },
+      { tag_name: 'runtime-tested', assets: pair },
+    ]))) as typeof fetch;
+    const manager = new RuntimeManager('/tmp/unused', () => undefined, () => false, fetcher);
+    expect((await manager.checkNexus()).nexusVersion).toBe('runtime-tested');
+  });
+
+  it('does not download or replace a runtime during an active operation', async () => {
+    const fetcher = (async () => { throw new Error('No download may start'); }) as typeof fetch;
+    const manager = new RuntimeManager('/tmp/unused', () => undefined, () => true, fetcher);
+    await expect(manager.installNexus(() => undefined)).rejects.toThrow('while a Xodus operation is active');
+  });
+
+  it.each(['valid', 'bad-digest', 'wrong-file'])('verifies a downloaded Nexus runtime before activation: %s', async scenario => {
     // Build a real tar.xz runtime archive with a fake wine binary, publish it
     // through the mocked release API, and run the full install path:
     // download, SHA-512 verification, extraction, canonical naming, pointer.
@@ -62,7 +83,7 @@ describe('previewBaseRelease', () => {
     const packed = await run('tar', ['-cJf', path.join(build, `${releaseName}-x86_64.tar.xz`), '-C', build, top]);
     if (packed.code !== 0) throw new Error('The tar fixture could not be created.');
     const digest = createHash('sha512').update(await fs.readFile(path.join(build, `${releaseName}-x86_64.tar.xz`))).digest('hex');
-    await fs.writeFile(path.join(build, `${releaseName}-x86_64.sha512sum`), `${digest}  ${releaseName}-x86_64.tar.xz\n`);
+    await fs.writeFile(path.join(build, `${releaseName}-x86_64.sha512sum`), `${scenario === 'bad-digest' ? '0'.repeat(128) : digest}  ${scenario === 'wrong-file' ? 'other.tar.xz' : `${releaseName}-x86_64.tar.xz`}\n`);
     const fetcher = (async (input: URL | RequestInfo) => {
       const url = String(input);
       if (url.includes('/releases?')) {
@@ -76,7 +97,20 @@ describe('previewBaseRelease', () => {
     }) as typeof fetch;
     const manager = new RuntimeManager(root, () => undefined, () => false, fetcher);
     try {
+      const previousWine = path.join(root, 'releases', 'previous', 'files', 'bin', 'wine');
+      await fs.mkdir(path.dirname(previousWine), { recursive: true });
+      await fs.writeFile(previousWine, '#!/bin/sh\necho wine-previous\n', { mode: 0o755 });
+      const previous = { name: 'previous', winePath: previousWine, commit: 'previous', installedAt: 'before' };
+      await fs.writeFile(path.join(root, 'current.json'), JSON.stringify(previous));
       await manager.refresh(); // detect tar and sha512sum prerequisites
+      if (scenario !== 'valid') {
+        await expect(manager.installNexus(() => undefined)).rejects.toThrow(/SHA-512/);
+        expect(JSON.parse(await fs.readFile(path.join(root, 'current.json'), 'utf8'))).toEqual(previous);
+        expect(manager.current.name).toBe('previous');
+        expect(manager.current.updating).toBe(false);
+        expect((await fs.readdir(root)).some(name => name.startsWith('.staging-'))).toBe(false);
+        return;
+      }
       const winePath = await manager.installNexus(() => undefined);
       expect(winePath).toBe(path.join(root, 'releases', releaseName, 'files', 'bin', 'wine'));
       const pointer = JSON.parse(await fs.readFile(path.join(root, 'current.json'), 'utf8')) as { name: string; commit: string };
@@ -84,6 +118,7 @@ describe('previewBaseRelease', () => {
       expect(pointer.commit).toBe('runtime-11.0-20261011-g3fd4ae10');
       expect(manager.current.name).toBe(releaseName);
       expect(manager.current.installed).toBe(true);
+      expect(await fs.readFile(previousWine, 'utf8')).toContain('wine-previous');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

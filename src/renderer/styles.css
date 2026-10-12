@@ -324,6 +324,20 @@ button.primary svg, button.secondary svg { width: 17px; height: 17px; }
 .settings-page { max-width: 1240px; }
 .settings-card { margin-bottom: 14px; padding: 24px; background: #222529; border: 1px solid var(--line); }
 .settings-card.compact { margin-bottom: 0; }
+.settings-storage { margin-bottom: 14px; }
+.settings-storage .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settings-diagnostics { padding: 0; }
+.settings-diagnostics > summary { display: flex; align-items: center; gap: 12px; padding: 18px 24px; list-style: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+.settings-diagnostics > summary::-webkit-details-marker { display: none; }
+.settings-diagnostics > summary:hover { background: #292d32; }
+.settings-diagnostics > summary:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+.settings-diagnostics > summary > svg { width: 18px; height: 18px; color: var(--muted); }
+.settings-diagnostics > summary > svg:last-child { margin-left: auto; transition: transform .15s ease; }
+.settings-diagnostics[open] > summary > svg:last-child { transform: rotate(90deg); }
+.diagnostics-content { padding: 0 24px 24px; }
+.diagnostics-content section + section { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 16px; }
+.diagnostics-content h3 { margin: 8px 0 12px; font-size: 12px; }
+.diagnostic-path { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; }
 .launcher-card { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; }
 .launcher-card .settings-heading { margin: 0; }
 .button-row a.primary { display: inline-flex; align-items: center; gap: 8px; padding: 0 17px; min-height: 39px; border-radius: 3px; background: #388e35; color: #fff; border: 1px solid transparent; font-size: 12px; font-weight: 650; text-decoration: none; }

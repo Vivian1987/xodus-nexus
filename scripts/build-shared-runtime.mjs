@@ -108,7 +108,9 @@ await fs.mkdir(tests);
 for (const test of ['taskqueue-teardown', 'taskqueue-contract', 'async-provider-contract', 'async-completion-lifetime']) {
   run('x86_64-w64-mingw32-gcc', ['-D__WINESRC__', '-O2', '-Wall', '-I', path.join(build, 'dlls/xgameruntime'), '-I', path.join(source, 'dlls/xgameruntime'), path.join(project, `scripts/runtime-tests/${test}-probe.c`), '-o', path.join(tests, `${test}-probe.exe`)], work);
 }
-run('x86_64-w64-mingw32-gcc', ['-O2', '-Wall', path.join(project, 'scripts/runtime-tests/winrt-json-probe.c'), '-o', path.join(tests, 'winrt-json-probe.exe'), '-lruntimeobject'], work);
+// windows.web generated these WinRT headers from the pinned IDL sources.
+// Ubuntu's older MinGW SDK need not contain windows.data.json.h at all.
+run('x86_64-w64-mingw32-gcc', ['-O2', '-Wall', '-I', path.join(build, 'include'), '-I', path.join(source, 'include'), path.join(project, 'scripts/runtime-tests/winrt-json-probe.c'), '-o', path.join(tests, 'winrt-json-probe.exe'), '-lruntimeobject'], work);
 await fs.copyFile(path.join(ngSource, 'COPYING'), path.join(components, 'nghttp2-LICENSE'));
 await fs.copyFile(path.join(source, 'COPYING.LIB'), path.join(components, 'Wine-LICENSE'));
 await fs.copyFile(path.join(source, 'dlls/xgameruntime/COPYING.LIB'), path.join(components, 'xgameruntime-LICENSE')).catch(async e => {

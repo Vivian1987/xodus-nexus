@@ -282,16 +282,18 @@ export class RuntimeManager {
         signal: AbortSignal.timeout(20_000),
       });
       if (!response.ok) throw new Error('The Xodus Nexus release list could not be read.');
-      const releases = await response.json() as Array<{ tag_name?: unknown; assets?: Array<{ name?: unknown; browser_download_url?: unknown }> }>;
+      const releases = await response.json() as Array<{ tag_name?: unknown; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: unknown; browser_download_url?: unknown }> }>;
       let found: { version: string; archive: { name: string; url: string }; checksum: { name: string; url: string } } | undefined;
       for (const release of releases) {
+        if (release.draft || release.prerelease) continue;
         const version = typeof release.tag_name === 'string' && release.tag_name.trim() ? release.tag_name.trim() : '';
         const assets = (release.assets ?? []).map((asset) => ({
           name: typeof asset.name === 'string' ? asset.name : '',
           url: typeof asset.browser_download_url === 'string' ? asset.browser_download_url : '',
         }));
-        const archive = assets.find((asset) => asset.name.endsWith('-x86_64.tar.xz'));
-        const checksum = assets.find((asset) => asset.name.endsWith('-x86_64.sha512sum'));
+        const archive = assets.find((asset) => /^xodus-nexus-runtime-[A-Za-z0-9._-]+-x86_64\.tar\.xz$/.test(asset.name) &&
+          /^https:\/\//.test(asset.url) && assets.some((sum) => sum.name === asset.name.replace(/\.tar\.xz$/, '.sha512sum') && /^https:\/\//.test(sum.url)));
+        const checksum = archive && assets.find((asset) => asset.name === archive.name.replace(/\.tar\.xz$/, '.sha512sum'));
         if (archive && checksum) { found = { version, archive, checksum }; break; }
       }
       if (!found) throw new Error('No release with a Xodus Nexus runtime archive was found.');
@@ -305,7 +307,7 @@ export class RuntimeManager {
       Object.assign(this.status, { nexusAvailable: true, nexusName: found.archive.name, nexusVersion: found.version, nexusError: undefined });
     } catch (error) {
       this.nexusArtifact = undefined;
-      Object.assign(this.status, { nexusAvailable: false, nexusError: (error as Error).message });
+      Object.assign(this.status, { nexusAvailable: false, nexusName: undefined, nexusVersion: undefined, nexusError: (error as Error).message });
     } finally {
       this.status.nexusChecking = false;
     }
@@ -336,6 +338,8 @@ export class RuntimeManager {
       await this.downloadFile(artifact.url, path.join(downloads, artifact.name));
       this.setPhase('Verifying the SHA-512 checksum…', onStatus);
       await this.downloadFile(artifact.checksumUrl, path.join(downloads, artifact.checksumName));
+      const checksum = (await fs.readFile(path.join(downloads, artifact.checksumName), 'utf8')).trim().match(/^([a-f0-9]{128})[ \t]+\*?([^\r\n]+)$/i);
+      if (!checksum || checksum[2] !== artifact.name) throw new Error('The SHA-512 file does not identify this Xodus Nexus runtime archive.');
       const result = await run('sha512sum', ['-c', artifact.checksumName], { cwd: downloads, maxOutput: 100_000 });
       if (result.code !== 0) throw new Error('Xodus Nexus runtime SHA-512 verification failed.');
 

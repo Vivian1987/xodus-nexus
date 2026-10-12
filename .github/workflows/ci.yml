@@ -2,11 +2,20 @@ name: CI
 
 on:
   push:
+    branches: [main, develop]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  checks:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,3 +25,17 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:runtime-tools
+      - run: npm run test:ci-tools
+      - name: Build launcher candidate (never publish)
+        run: npx --no-install electron-builder --linux AppImage --publish never
+      - name: Bind candidate to source and checksums
+        run: node scripts/ci/artifact-manifest.mjs write launcher release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-candidate
+          path: |
+            release/*.AppImage
+            release/*.AppImage.sha512sum
+            release/candidate.json
+          if-no-files-found: error
+          retention-days: 3
