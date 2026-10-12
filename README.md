@@ -1,79 +1,52 @@
 <div align="center">
 
-<img src="assets/icon.png" width="120" alt="Xodus Nexus" />
+<img src="assets/icon.png" width="96" alt="Xodus Nexus" />
 
 # Xodus Nexus
 
-Open-source Xbox-inspired game launcher for Linux, built on the
-[xodus](https://github.com/xodus-gaming/xodus) project.
+Your Microsoft Store PC games, on Linux.
 
 [![CI](https://github.com/domsvoboda/xodus-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/domsvoboda/xodus-nexus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
-Xodus Nexus browses the Microsoft Store catalog, signs you in to your Xbox
-account, downloads PC Game Pass titles and runs them through a managed Wine
-build with an open-source Xbox GDK runtime.
+An Xbox-inspired launcher built on [Xodus](https://github.com/xodus-gaming/xodus).
+Browse the Store, install games you own or can access through a subscription,
+and play with one shared runtime. Xbox sign-in and cloud saves are available
+for supported games.
 
----
+![Xodus Nexus home](docs/screenshots/demo-home.png)
 
-![Xodus Nexus demo](docs/screenshots/demo.gif)
+*Demo UI with a sample library and queue; screenshots are not compatibility claims.*
 
-## Features
+## Get started
 
-- Store catalog with search and trending, Library, Downloads and Settings
-- Xbox sign-in through the xodus backend (gamertag, XUID, licenses)
-- One-click install and play with managed Xodus Proton runtimes
-- Cloud save sync for supported titles
-- Per-title runtime configuration
+**0.1.0 is being prepared as the first release.** The AppImage contains the
+launcher; it downloads its runtime separately. Release downloads currently
+require access to this private repository.
 
-## Install
+[Downloads](https://github.com/domsvoboda/xodus-nexus/releases) ·
+[Setup & documentation](https://github.com/domsvoboda/xodus-nexus/wiki) *(wiki pending)* ·
+[Report an issue](https://github.com/domsvoboda/xodus-nexus/issues)
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/domsvoboda/xodus-nexus/main/scripts/install.sh | bash
-```
+## Compatible games
 
-On first run the launcher builds its managed backend (`git`, `cargo` and
-`protoc` required) and offers a one-click download of the prebuilt Xodus
-Nexus runtime. More details in the
-[wiki](https://github.com/domsvoboda/xodus-nexus/wiki).
+| Game | Tested features |
+| --- | --- |
+| Gears of War: E-Day | Launch, account sign-in, existing saves, online lobby |
 
-The AppImage contains only the launcher, not Wine/Proton. In Settings, install
-the shared Nexus runtime from this repository's **published GitHub Releases**.
-The launcher verifies the matching SHA-512 file before activation, preserves
-previous runtime versions, and refuses changes during active Xodus operations.
-Runtime updates are independent of launcher updates; GitHub login is not needed
-for these public release downloads. Drafts, prereleases and Actions artifacts
-are not used by this stable download path. A runtime release must be published
-before a fresh installation can use it; a source push alone is not sufficient.
+Tested on the development runtime. An online lobby is not a completed
+multiplayer-match test, and compatibility depends on the runtime and game version.
+More reports and known issues will live in the
+[Compatibility wiki](https://github.com/domsvoboda/xodus-nexus/wiki/Compatibility).
 
-## Status
+## Screenshots
 
-Catalog browsing, sign-in, downloads and launching work. Title
-compatibility varies; anti-cheat/online play is experimental. No Microsoft
-binaries are shipped — managed components are downloaded on your machine.
+[Library](docs/screenshots/demo-library.png) ·
+[Store](docs/screenshots/demo-store.png) ·
+[Install queue](docs/screenshots/demo-downloads.png) ·
+[Settings](docs/screenshots/demo-settings.png)
 
-## Development
-
-Work on feature/fix branches targeting `develop`; reviewed integration targets
-`main`. Read [AGENTS.md](AGENTS.md) and the shared
-[engineering status](docs/development/STATUS.md) before taking over work.
-CI creates test candidates; only separately authorized
-[promotion](docs/development/RELEASES.md) publishes tested binaries.
-
-```sh
-npm install
-npm run dev      # launcher in dev mode
-npm test         # unit tests
-npm run dist     # AppImage build
-```
-
-Patches in `assets/` are developed against the upstream xodus-gaming
-repositories and meant to be contributed back; see
-[docs/patches.md](docs/patches.md) and the
-[pinned clean-build recipe](scripts/SHARED_RUNTIME.md).
-
-## License
-
-[MIT](LICENSE)
+Independent project, not affiliated with Microsoft or Xbox. A valid game license
+is required. [MIT license](LICENSE) · [Contributing](CONTRIBUTING.md)

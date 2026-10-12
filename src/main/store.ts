@@ -169,7 +169,6 @@ export async function inspectGameDirectory(directory: string): Promise<Game> {
     && await readable(vcRedistPath) && !await beginsWithMz(vcRedistPath);
   let antiCheat: Game['antiCheat'];
   let launchSupport: Game['launchSupport'] = 'unknown';
-  let launchBlockReason: string | undefined;
   for (const eacDirectory of ['EasyAntiCheat', 'EasyAntiCheat_EOS']) {
     let settings: { executable?: unknown };
     try {
@@ -182,7 +181,8 @@ export async function inspectGameDirectory(directory: string): Promise<Game> {
     antiCheat = { provider: 'Easy Anti-Cheat', executable: eacExecutable, encryptedTarget };
     if (hasFinal && eacExecutable) {
       launchSupport = 'offline-only-eac';
-      launchBlockReason = 'Easy Anti-Cheat detected. Only offline play is supported.';
+      // Legacy launch-route selector, not a compatibility verdict. EAC
+      // detection alone cannot establish whether online services work.
     }
     break;
   }
@@ -218,7 +218,7 @@ export async function inspectGameDirectory(directory: string): Promise<Game> {
     installState,
     installMessage,
     launchSupport,
-    launchBlockReason,
+    launchBlockReason: undefined,
     vcRedistEncrypted,
     antiCheat,
     addedAt: new Date().toISOString(),

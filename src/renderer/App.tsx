@@ -58,10 +58,9 @@ function Cover({ game, className = '' }: { game: Game; className?: string }) {
 }
 
 function StatePill({ game }: { game: Game }) {
-  const offlineOnly = game.launchSupport === 'offline-only-eac';
-  const label = offlineOnly ? 'Offline only' : game.installState === 'ready' ? 'Ready' : game.installState === 'incomplete' ? 'Incomplete' : 'Imported';
-  return <span className={`state-pill ${offlineOnly ? 'offline' : game.installState}`}>
-    {game.installState === 'ready' && !offlineOnly ? <Check /> : <CircleAlert />}{label}
+  const label = game.installState === 'ready' ? 'Ready' : game.installState === 'incomplete' ? 'Incomplete' : 'Imported';
+  return <span className={`state-pill ${game.installState}`}>
+    {game.installState === 'ready' ? <Check /> : <CircleAlert />}{label}
   </span>;
 }
 
@@ -83,7 +82,7 @@ function useGameLaunchOptions(game: Game | undefined, data: AppSnapshot): GameLa
   return options;
 }
 
-function HomePage({ data, go, action }: {
+export function HomePage({ data, go, action }: {
   data: AppSnapshot; go: (page: Page) => void; action: (fn: () => Promise<unknown>, success?: string) => void;
 }) {
   const featured = data.games[0];
@@ -98,7 +97,7 @@ function HomePage({ data, go, action }: {
         <span className="overline">{featured ? 'CONTINUE PLAYING' : 'XODUS NEXUS'}</span>
         <h1>{featured?.title ?? 'Your PC games, brought together.'}</h1>
         <p>{featured
-          ? featured.antiCheat ? 'Easy Anti-Cheat detected. Only offline play is supported.' : featured.installMessage ?? `${featured.publisher ?? 'Local Xbox PC installation'} · Ready in your library`
+          ? featured.installMessage ?? `${featured.publisher ?? 'Local Xbox PC installation'} · Ready in your library`
           : 'Import an existing Xodus installation or install a game you own using its Microsoft Store Product ID.'}</p>
         <div className="button-row">
           {featured && canPlay
@@ -107,7 +106,7 @@ function HomePage({ data, go, action }: {
           <button className="secondary" onClick={() => go('library')}><Library />View library</button>
         </div>
       </div>
-      {featured ? <div className="spotlight-meta"><StatePill game={featured} />{launchOptions?.cloudSaves ? <span>Cloud saves preview</span> : null}<span>{featured.storeId ? `Store ID ${featured.storeId}` : 'Local import'}</span></div> : null}
+      {featured ? <div className="spotlight-meta"><StatePill game={featured} />{launchOptions?.cloudSaves ? <span>Cloud saves</span> : null}<span>{featured.storeId ? `Store ID ${featured.storeId}` : 'Local import'}</span></div> : null}
     </section>
 
     <SectionTitle title="Recently added" action="See all" onClick={() => go('library')} />
@@ -225,7 +224,7 @@ function StorePage({ data, toast, go, initialQuery }: { data: AppSnapshot; toast
   </main>;
 }
 
-function LibraryPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast) => void }) {
+export function LibraryPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast) => void }) {
   const [selectedId, setSelectedId] = useState<string>();
   const [menu, setMenu] = useState<{ id: string; x: number; y: number }>();
   const [dialogGame, setDialogGame] = useState<{ id: string; kind: 'settings' | 'remove' }>();
@@ -329,7 +328,6 @@ function LibraryPage({ data, toast }: { data: AppSnapshot; toast: (value: Toast)
       {selected ? <aside className="game-detail">
         <div className="detail-art"><Cover game={selected} /><div className="detail-shade" /><div><StatePill game={selected} /><h2>{selected.title}</h2><span>{selected.publisher ?? 'Publisher not provided'}</span></div></div>
         {selected.installMessage ? <div className="alert amber"><CircleAlert /><span>{selected.installMessage}</span></div> : null}
-        {selected.antiCheat ? <div className="alert amber"><CircleAlert /><span>Easy Anti-Cheat detected. Only offline play is supported.</span></div> : null}
         {selected.vcRedistEncrypted ? <div className="alert amber"><CircleAlert /><span>This game bundles an encrypted VC++ installer. Install a verified Microsoft VC++ runtime into its Proton prefix here. Game files stay unchanged.</span></div> : null}
         <dl><div><dt>Store ID</dt><dd>{selected.storeId ?? 'Not found'}</dd></div><div><dt>Executable</dt><dd>{selected.executable ?? 'Not found'}</dd></div><div><dt>Location</dt><dd title={selected.path}>{selected.path}</dd></div></dl>
         <div className="detail-actions">
@@ -424,7 +422,7 @@ export function SettingsPage({ data, toast }: { data: AppSnapshot; toast: (value
     <header className="page-header"><div><h1>Settings</h1><p>Account, backend, runtime, and storage.</p></div></header>
 
     <section className="settings-card compact launcher-card">
-      <div className="settings-heading"><div className="settings-icon"><Rocket /></div><div><span className="overline">XODUS NEXUS</span><h2>{data.launcherUpdate?.currentVersion ?? 'Development build'}</h2><p>{data.launcherUpdate?.latestVersion ? `Version ${data.launcherUpdate.latestVersion} is available — re-run the install script or download the new AppImage.` : data.launcherUpdate?.checkedAt ? 'You are on the latest published release.' : 'Checks the public GitHub release list.'}</p></div></div>
+      <div className="settings-heading"><div className="settings-icon"><Rocket /></div><div><span className="overline">XODUS NEXUS</span><h2>{data.launcherUpdate?.currentVersion ?? 'Development build'}</h2><p>{data.launcherUpdate?.latestVersion ? `Version ${data.launcherUpdate.latestVersion} is available — re-run the install script or download the new AppImage.` : 'Check GitHub for launcher updates.'}</p></div></div>
       <div className="button-row">
         {data.launcherUpdate?.releaseUrl ? <a className="primary" href={data.launcherUpdate.releaseUrl} target="_blank" rel="noreferrer"><ArrowDownToLine />Download update</a> : null}
         <button className="secondary" disabled={data.launcherUpdate?.checking} onClick={() => invoke('update-check', () => window.launcher.checkLauncherUpdate(), 'Update check finished.')}>{data.launcherUpdate?.checking ? <LoaderCircle className="spin" /> : <RefreshCw />}Check for updates</button>

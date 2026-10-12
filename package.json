@@ -1,7 +1,7 @@
 {
   "name": "xodus-nexus",
-  "version": "0.5.24",
-  "description": "Open-source Xbox-inspired desktop launcher for Xodus on CachyOS",
+  "version": "0.1.0",
+  "description": "Xbox-inspired Microsoft Store game launcher for Linux",
   "license": "MIT",
   "author": "Xodus Nexus contributors",
   "type": "module",

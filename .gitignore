@@ -11,6 +11,11 @@ coverage/
 .env.*
 !.env.example
 .agents/
+# Agent instructions and handoff state are local, not product documentation.
+/AGENTS.md
+/STATUS.md
+/docs/development/
+/docs/wiki/
 .aws/
 .codex/
 *.AppImage

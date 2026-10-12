@@ -859,6 +859,8 @@ async function createWindow(): Promise<void> {
   const smokeStoreQuery = process.env.XODUS_NEXUS_SMOKE_STORE_QUERY;
   const smokeStore = process.env.XODUS_NEXUS_SMOKE_STORE === '1' || Boolean(smokeStoreQuery);
   const demoCaptureDir = process.env.XODUS_DEMO_CAPTURE_DIR;
+  if (demoCaptureDir && !demoMode) throw new Error('Demo capture requires XODUS_DEMO=1; real account data must not be captured.');
+  const hiddenCapture = Boolean(smokeScreenshot || demoCaptureDir);
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -868,19 +870,19 @@ async function createWindow(): Promise<void> {
     title: 'Xodus Nexus',
     icon: fileURLToPath(new URL('../../assets/icon.png', import.meta.url)),
     autoHideMenuBar: true,
-    show: !smokeScreenshot,
+    show: !hiddenCapture,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      offscreen: Boolean(smokeScreenshot),
+      offscreen: hiddenCapture,
     },
   });
   mainWindow.webContents.on('did-fail-load', (_event, code, description) => console.error('Renderer load failed', code, description));
   mainWindow.webContents.on('render-process-gone', (_event, details) => console.error('Renderer process exited', details.reason));
   if (smokeScreenshot) mainWindow.webContents.on('console-message', (_event, level, message) => console.error(`Renderer console [${level}]`, message));
-  if (!smokeScreenshot) mainWindow.once('ready-to-show', () => mainWindow?.show());
+  if (!hiddenCapture) mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
@@ -890,7 +892,8 @@ async function createWindow(): Promise<void> {
   if (demoCaptureDir) {
     // Demo screenshot capture: with XODUS_DEMO=1 and XODUS_DEMO_TOUR=1 the
     // renderer cycles pages every 7s; grab one shot per page just before
-    // each switch, offscreen, without any account or network data.
+    // each switch, offscreen, without real account data. Store artwork/catalog
+    // are fetched live; the library and queue are explicitly sample fixtures.
     await fs.mkdir(demoCaptureDir, { recursive: true });
     const pages = ['home', 'library', 'store', 'downloads', 'settings'];
     for (let index = 0; index < pages.length; index++) {
@@ -899,6 +902,7 @@ async function createWindow(): Promise<void> {
       await fs.writeFile(path.join(demoCaptureDir, `demo-${pages[index]}.png`), image.toPNG());
     }
     app.quit();
+    return;
   }
   if (smokeScreenshot) {
     await new Promise((resolve) => setTimeout(resolve, 1200));

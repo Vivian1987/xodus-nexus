@@ -4,6 +4,12 @@ import { demoSnapshot } from '../shared/demo-data';
 import { SettingsPage } from './App';
 
 describe('Settings diagnostics', () => {
+  it('does not call an unpublished development build the latest published release', () => {
+    const html = renderToStaticMarkup(<SettingsPage data={demoSnapshot()} toast={() => {}} />);
+    expect(html).toContain('0.1.0');
+    expect(html).not.toContain('latest published release');
+    expect(html).toContain('Check GitHub for launcher updates.');
+  });
   it('keeps technical details in a closed disclosure, without a CLI command list', () => {
     const html = renderToStaticMarkup(<SettingsPage data={demoSnapshot()} toast={() => {}} />);
     const details = html.match(/<details\b[^>]*>[\s\S]*?<\/details>/)?.[0];

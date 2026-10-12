@@ -21,7 +21,7 @@ try {
   command('gh', ['run', 'download', runId, '--repo', repo, '--name', kind === 'launcher' ? 'launcher-candidate' : 'nexus-runtime', '--dir', directory]);
   const manifest = await verifyManifest(directory, { kind, repository: repo, commit: run.head_sha, runId });
   const hash = createHash('sha256').update(await fs.readFile(path.join(directory, 'candidate.json'))).digest('hex');
-  const approvals = JSON.parse(await fs.readFile('docs/development/RELEASE_VALIDATION.json', 'utf8'));
+  const approvals = JSON.parse(await fs.readFile('.github/release-validation.json', 'utf8'));
   const approval = approvals.schema === 1 && approvals.approvals?.find(item => item.kind === kind && item.runId === runId &&
     item.commit === run.head_sha && item.manifestSha256 === hash && item.approved === true && item.approvedBy === process.env.GITHUB_ACTOR &&
     typeof item.evidence === 'string' && item.evidence.trim().length > 0);

@@ -24,7 +24,7 @@ async function makeEacGame(targetHeader: Buffer, eacDirectory = 'EasyAntiCheat')
 }
 
 describe('inspectGameDirectory anti-cheat support', () => {
-  it('blocks an EAC chain whose target is still encrypted on disk', async () => {
+  it('detects an encrypted EAC chain without declaring online play unsupported', async () => {
     const game = await inspectGameDirectory(await makeEacGame(Buffer.from([0x01, 0x02, 0x03])));
     expect(game.installState).toBe('ready');
     expect(game.launchSupport).toBe('offline-only-eac');
@@ -33,7 +33,7 @@ describe('inspectGameDirectory anti-cheat support', () => {
       executable: 'Game\\Binaries\\Game.exe',
       encryptedTarget: true,
     });
-    expect(game.launchBlockReason).toBe('Easy Anti-Cheat detected. Only offline play is supported.');
+    expect(game.launchBlockReason).toBeUndefined();
   });
 
   it('uses the offline route for detected EAC even when the target is an ordinary PE file', async () => {

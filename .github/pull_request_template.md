@@ -4,7 +4,7 @@ What changed? Is this WIP, a tested fix, or ready for integration?
 
 ## Evidence
 
-- [ ] Updated docs/development/STATUS.md (facts, failures and next step)
+- [ ] Recorded test results, limitations and the next step below
 - [ ] Launcher checks and runtime-tool tests
 - [ ] Runtime clean/native CI if patches/build/base/provisioning changed
 - [ ] Exact candidate / commit / checksum recorded for manual game tests
