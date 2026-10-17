@@ -1,0 +1,165 @@
+diff --git a/dlls/xgameruntime/xstore.c b/dlls/xgameruntime/xstore.c
+index df0e209..af79091 100644
+--- a/dlls/xgameruntime/xstore.c
++++ b/dlls/xgameruntime/xstore.c
+@@ -102,14 +102,17 @@ static HRESULT WINAPI x_store_XStoreQueryAssociatedProductsResult( IXStoreImpl6
+ 
+ static HRESULT WINAPI x_store_XStoreQueryProductsAsync( IXStoreImpl6 *iface, const XStoreContextHandle storeContextHandle, XStoreProductKind productKinds, const char **storeIds, SIZE_T storeIdsCount, const char **actionFilters, SIZE_T actionFiltersCount, XAsyncBlock *async )
+ {
+-    FIXME( "iface %p, storeContextHandle %p, productKinds %#x, storeIds %p, storeIdsCount %Iu, actionFilters %p, actionFiltersCount %Iu, async %p stub!\n", iface, storeContextHandle, productKinds, storeIds, storeIdsCount, actionFilters, actionFiltersCount, async );
+-    return E_NOTIMPL;
++    /* Signed-receipt path limited to the requested Store IDs. Only owned
++     * products are returned; there is no unowned catalog listing yet. */
++    TRACE( "iface %p, storeContextHandle %p, productKinds %#x, storeIds %p, storeIdsCount %Iu, actionFilters %p, actionFiltersCount %Iu, async %p.\n", iface, storeContextHandle, productKinds, storeIds, storeIdsCount, actionFilters, actionFiltersCount, async );
++    if (!storeIds) return E_INVALIDARG;
++    return entitled_begin_ids(storeContextHandle, productKinds, ENTITLED_MAX_PRODUCTS, storeIds, storeIdsCount, async);
+ }
+ 
+ static HRESULT WINAPI x_store_XStoreQueryProductsResult( IXStoreImpl6 *iface, XAsyncBlock *async, XStoreProductQueryHandle *productQueryHandle )
+ {
+-    FIXME( "iface %p, async %p, productQueryHandle %p stub!\n", iface, async, productQueryHandle );
+-    return E_NOTIMPL;
++    TRACE( "iface %p, async %p, productQueryHandle %p.\n", iface, async, productQueryHandle );
++    return entitled_result(async, productQueryHandle, FALSE);
+ }
+ 
+ static HRESULT WINAPI x_store_XStoreQueryEntitledProductsAsync( IXStoreImpl6 *iface, const XStoreContextHandle storeContextHandle, XStoreProductKind productKinds, UINT32 maxItemsToRetrievePerPage, XAsyncBlock *async )
+@@ -124,14 +127,17 @@ static HRESULT WINAPI x_store_XStoreQueryEntitledProductsResult( IXStoreImpl6 *i
+ 
+ static HRESULT WINAPI x_store_XStoreQueryProductForCurrentGameAsync( IXStoreImpl6 *iface, const XStoreContextHandle storeContextHandle, XAsyncBlock *async )
+ {
+-    FIXME( "iface %p, storeContextHandle %p, async %p stub!\n", iface, storeContextHandle, async );
+-    return E_NOTIMPL;
++    /* Same signed-receipt path as entitled products, limited to the current
++     * game's own Store ID. An unowned game yields an empty query. */
++    const char *ids[1] = { storeId };
++    TRACE( "iface %p, storeContextHandle %p, async %p.\n", iface, storeContextHandle, async );
++    return entitled_begin_ids(storeContextHandle, XStoreProductKind_Game, 1, ids, 1, async);
+ }
+ 
+ static HRESULT WINAPI x_store_XStoreQueryProductForCurrentGameResult( IXStoreImpl6 *iface, XAsyncBlock *async, XStoreProductQueryHandle *productQueryHandle )
+ {
+-    FIXME( "iface %p, async %p, productQueryHandle %p stub!\n", iface, async, productQueryHandle );
+-    return E_NOTIMPL;
++    TRACE( "iface %p, async %p, productQueryHandle %p.\n", iface, async, productQueryHandle );
++    return entitled_result(async, productQueryHandle, FALSE);
+ }
+ 
+ static HRESULT WINAPI x_store_XStoreQueryProductForPackageAsync( IXStoreImpl6 *iface, const XStoreContextHandle storeContextHandle, XStoreProductKind productKinds, const char *packageIdentifier, XAsyncBlock *async )
+diff --git a/dlls/xgameruntime/xstore_entitled.h b/dlls/xgameruntime/xstore_entitled.h
+index e7cb549..6d0af3b 100644
+--- a/dlls/xgameruntime/xstore_entitled.h
++++ b/dlls/xgameruntime/xstore_entitled.h
+@@ -27,6 +27,15 @@ static BOOL entitled_sku_id( const char *text )
+     return TRUE;
+ }
+ 
++/* Store ID, optionally SKU-qualified ("9XXXXXXXXXXX/0010"); out gets the product part. */
++static BOOL entitled_product_part( const char *text, char out[13] )
++{
++    if (!text || strlen(text) < 12) return FALSE;
++    memcpy(out, text, 12); out[12] = 0;
++    if (!entitled_id(out)) return FALSE;
++    return !text[12] || (text[12] == '/' && entitled_sku_id(text + 13));
++}
++
+ HRESULT xstore_configure( struct _xmlNode *root )
+ {
+     xmlNodePtr node, child;
+@@ -414,22 +423,28 @@ static HRESULT entitled_start( struct entitled_async *context, XAsyncBlock *asyn
+     return hr;
+ }
+ 
+-static HRESULT entitled_begin( XStoreContextHandle store, UINT32 kinds, UINT32 page_size, XAsyncBlock *async )
++/* ids limits the receipt request to those Store IDs (all owned products when
++ * NULL). The parent ID is always sent for the receipt but only returned when
++ * requested. Unowned IDs are simply absent from the result. */
++static HRESULT entitled_begin_ids( XStoreContextHandle store, UINT32 kinds, UINT32 page_size,
++    const char **ids, SIZE_T ids_count, XAsyncBlock *async )
+ {
+     struct entitled_async *context;
+     xmlDocPtr doc;
+     xmlNodePtr root;
+     xmlChar *bytes = NULL;
+-    char kind[16], language[128] = "en-US", market[16] = "US";
++    char kind[16], language[128] = "en-US", market[16] = "US", id[13];
+     WCHAR locale[85], country[16];
+     UINT64 xuid, serial;
+     UINT32 i;
+     int size;
+     HRESULT hr;
+     if (!async || !kinds || (kinds & ~31) || !page_size) return E_INVALIDARG;
++    if (ids && (!ids_count || ids_count >= ENTITLED_MAX_PRODUCTS)) return E_INVALIDARG;
+     page_size = min(page_size, ENTITLED_MAX_PRODUCTS);
+     if (FAILED(hr = entitled_store_identity(store, &xuid, &serial))) return hr;
+     if (!entitled_id(storeId)) return E_GAME_MISSING_GAME_CONFIG;
++    for (i = 0; ids && i < ids_count; i++) if (!entitled_product_part(ids[i], id)) return E_INVALIDARG;
+     if (GetUserDefaultLocaleName(locale, ARRAY_SIZE(locale)))
+         WideCharToMultiByte(CP_UTF8, 0, locale, -1, language, sizeof(language), NULL, NULL);
+     if (GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, country, ARRAY_SIZE(country)))
+@@ -439,8 +454,23 @@ static HRESULT entitled_begin( XStoreContextHandle store, UINT32 kinds, UINT32 p
+     xmlDocSetRootElement(doc, root);
+     snprintf(kind, sizeof(kind), "%u", kinds);
+     xmlNewTextChild(root, NULL, BAD_CAST "ParentProductId", BAD_CAST storeId);
+-    for (i = 0; i < entitled_related_count; i++)
+-        if (strcmp(storeId, entitled_related[i])) xmlNewTextChild(root, NULL, BAD_CAST "ProductId", BAD_CAST entitled_related[i]);
++    if (ids)
++    {
++        BOOL parent = FALSE;
++        for (i = 0; i < ids_count; i++)
++        {
++            char other[13];
++            SIZE_T j;
++            entitled_product_part(ids[i], id);
++            if (!strcmp(storeId, id)) { parent = TRUE; continue; }
++            for (j = 0; j < i && (entitled_product_part(ids[j], other), strcmp(id, other)); j++);
++            if (j == i) xmlNewTextChild(root, NULL, BAD_CAST "ProductId", BAD_CAST id);
++        }
++        if (!parent) xmlNewTextChild(root, NULL, BAD_CAST "ExcludeParent", BAD_CAST "true");
++    }
++    else
++        for (i = 0; i < entitled_related_count; i++)
++            if (strcmp(storeId, entitled_related[i])) xmlNewTextChild(root, NULL, BAD_CAST "ProductId", BAD_CAST entitled_related[i]);
+     xmlNewTextChild(root, NULL, BAD_CAST "ProductKinds", BAD_CAST kind);
+     xmlNewTextChild(root, NULL, BAD_CAST "Market", BAD_CAST market);
+     xmlNewTextChild(root, NULL, BAD_CAST "Language", BAD_CAST language);
+@@ -457,6 +487,11 @@ static HRESULT entitled_begin( XStoreContextHandle store, UINT32 kinds, UINT32 p
+     return entitled_start(context, async, FALSE);
+ }
+ 
++static HRESULT entitled_begin( XStoreContextHandle store, UINT32 kinds, UINT32 page_size, XAsyncBlock *async )
++{
++    return entitled_begin_ids(store, kinds, page_size, NULL, 0, async);
++}
++
+ static HRESULT entitled_result( XAsyncBlock *async, XStoreProductQueryHandle *out, BOOL next )
+ {
+     IXThreadingImpl *threading;
+diff --git a/dlls/xgameruntime/xstore_receipts.h b/dlls/xgameruntime/xstore_receipts.h
+index 2963761..581bd46 100644
+--- a/dlls/xgameruntime/xstore_receipts.h
++++ b/dlls/xgameruntime/xstore_receipts.h
+@@ -441,6 +441,7 @@ static HRESULT entitled_fetch( const char *request, LONG *canceled, struct entit
+     struct receipt_license licenses[ENTITLED_MAX_PRODUCTS];
+     UINT32 count = 0, license_count = 0, i, j, batch;
+     UINT64 kinds, expiry = UINT64_MAX, proof_until = 0;
++    BOOL exclude_parent;
+     ULONGLONG deadline = GetTickCount64() + 120000;
+     char number[32];
+     HRESULT hr = E_UNEXPECTED, com = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+@@ -454,6 +455,7 @@ static HRESULT entitled_fetch( const char *request, LONG *canceled, struct entit
+         { if (count == ENTITLED_MAX_PRODUCTS) goto done; ids[count++] = (char *)xmlNodeGetContent(node); }
+     for (i = 0; i < count; i++) if (!entitled_id(ids[i])) goto done;
+     market = entitled_text(root, "Market"); language = entitled_text(root, "Language");
++    { xmlNodePtr exclude = entitled_child(root, "ExcludeParent"); exclude_parent = exclude != NULL; }
+     if (!market || strlen(market) != 2 || !language || strlen(language) > 35 ||
+         FAILED(entitled_uint(root, "ProductKinds", &kinds))) goto done;
+     for (i = 0; market[i]; i++) if (market[i] < 'A' || market[i] > 'Z') goto done;
+@@ -492,6 +494,7 @@ static HRESULT entitled_fetch( const char *request, LONG *canceled, struct entit
+     {
+         if (InterlockedCompareExchange(canceled, 0, 0)) { hr = E_ABORT; goto done; }
+         if (GetTickCount64() >= deadline) { hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT); goto done; }
++        if (exclude_parent && !strcmp(licenses[i].id, ids[0])) continue;
+         hr = receipt_metadata(&licenses[i], kinds, market, language, response_root);
+         xodus_store_license_note("store-entitled-metadata", hr);
+         if (FAILED(hr)) goto done;

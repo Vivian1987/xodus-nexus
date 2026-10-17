@@ -116,6 +116,14 @@
     {
       "file": "assets/xgameruntime-game-license-events.patch",
       "sha256": "a97084c5ca22cf14d35538e9add8a2d820388f4133dbe158c74160034fe3be83"
+    },
+    {
+      "file": "assets/xgameruntime-endpoint-relative-path.patch",
+      "sha256": "f1c64a6ace355fd5dba248eb702408d9a6fee09a06cc6d25f81a5949be610cbb"
+    },
+    {
+      "file": "assets/xgameruntime-store-current-game-product.patch",
+      "sha256": "9a2fcdeed2564a41de6eacbc2ed5d087a6edabb39c609bfc654e718cd8917d75"
     }
   ],
   "expectedXgameruntimeSources": {
@@ -135,14 +143,14 @@
     "dlls/xgameruntime/xpackage_content.h": "d3addb58053e44848bfb2be29d3568019196568ad98b605544b3506c03ed1c2f",
     "dlls/xgameruntime/xpackage.idl": "afb602c0f76a97f6358950baf48e7a49df61e150134989b676879e7001a60108",
     "dlls/xgameruntime/xpersistentlocalstorage.c": "48111212dcfe4ef328fa482dc8b426ef853b7c961d575aefeaa3b559788809b2",
-    "dlls/xgameruntime/xstore.c": "323183e6c7b6f627888dcd6c7d9be90bc1bf43cb8677b3be4fb06a1539947a5b",
-    "dlls/xgameruntime/xstore_entitled.h": "cae87da7943d625664c94b7179b47f1eedf2cd3dfd3192f99bd1a252b273e289",
-    "dlls/xgameruntime/xstore_receipts.h": "637cc315d72bb1ad20ce5529dfb6be4ef01ae8fd08a321aa5e852c1557c1d280",
+    "dlls/xgameruntime/xstore.c": "2aac3a3a379cda4b309fa166083c21cd8a1bf7a220e11bdf488ffbcccd518691",
+    "dlls/xgameruntime/xstore_entitled.h": "0ec06337bc82b6a763396f792e2643c977b672f688a1a7b47555f6572e675dd6",
+    "dlls/xgameruntime/xstore_receipts.h": "3d589cd95f81fcd993414b6bbde68bd8f38e9e456b951e431421baf00547218a",
     "dlls/xgameruntime/xstore_package_license.h": "678f109e0a0af3f5e87951666f7c891af3999658f8698eb8855387ea355e2a31",
     "dlls/xgameruntime/xsystem.c": "974c83fe2e1b97e6b2c86e95a558b31d2effe6b9d2b3166c2c4d1882a4341058",
     "dlls/xgameruntime/xsystemanalytics.c": "189e99c83273b429325ecefa2b9246c45863c22f0c4006a791ec57b8f7b9d384",
     "dlls/xgameruntime/xthreading.c": "9bcc7c380bc57723221335c48a27f065b5a88072d1036cc07235705973f42827",
-    "dlls/xgameruntime/xuser.c": "e6826a27ca1068f8ac55e43e047a0e6cb6393713c7acd4563fe7d08d53865cb6",
+    "dlls/xgameruntime/xuser.c": "e9f8f3b492e84b464258daa70881610c492b842fc8ba859dd8e137ec46e04219",
     "dlls/xgameruntime/util.c": "aebf1a7ebef0dff89d3a1683bc40e16c821eaeb5cc1160ce474b905d14d7cb5c",
     "dlls/xgameruntime/util.h": "b739dba8a69a36103e72afc8dcaeaf324470d9ed47a5a7dd81b18e4e511ae69a",
     "dlls/xgameruntime/userprovider.idl": "66fb09670b7dabfc55257475094239018ea9a19ec2be348e56cf2b17ef615d7a",

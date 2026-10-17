@@ -283,6 +283,20 @@ static void test_async(struct entitled_snapshot *snapshot)
     CHECK("invalid-store-handle", entitled_begin((void *)1, 31, 10, &block) == E_INVALIDARG);
     CHECK("create-requires-output", entitled_store_create(NULL, NULL) == E_POINTER);
     CHECK("begin-store", entitled_store_create(NULL, &store) == S_OK);
+    {
+        const char *bad[] = { "B00000000002", "not-a-store-id" }, *none[] = { NULL };
+        CHECK("ids-empty", entitled_begin_ids(store, 31, 10, bad, 0, &block) == E_INVALIDARG);
+        CHECK("ids-too-many", entitled_begin_ids(store, 31, 10, bad, ENTITLED_MAX_PRODUCTS, &block) == E_INVALIDARG);
+        CHECK("ids-malformed", entitled_begin_ids(store, 31, 10, bad, 2, &block) == E_INVALIDARG);
+        CHECK("ids-null-entry", entitled_begin_ids(store, 31, 10, none, 1, &block) == E_INVALIDARG);
+    }
+    {
+        char id[13];
+        CHECK("id-bare", entitled_product_part("B00000000002", id) && !strcmp(id, "B00000000002"));
+        CHECK("id-sku-qualified", entitled_product_part("B00000000002/0010", id) && !strcmp(id, "B00000000002"));
+        CHECK("id-bad-sku", !entitled_product_part("B00000000002/001", id) && !entitled_product_part("B00000000002/00100", id));
+        CHECK("id-bad-separator", !entitled_product_part("B00000000002-0010", id) && !entitled_product_part("B0000000000", id));
+    }
     IXThreadingImpl_XTaskQueueSetCurrentProcessTaskQueue(threads, NULL);
     memset(&block, 0, sizeof(block));
     CHECK("begin-failure-without-queue", FAILED(entitled_begin(store, 31, 10, &block)));

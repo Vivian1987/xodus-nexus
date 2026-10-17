@@ -92,6 +92,7 @@ but have not been verified and may encounter compatibility issues.
 | Hollow Knight: Voidheart Edition | Yes | Playable. |
 | Avowed | Yes | Playable. |
 | Mortal Shell: Enhanced Edition | Yes | Playable (user report). |
+| Solo Leveling: ARISE OVERDRIVE | Yes | Playable online with the unreleased runtime fix. |
 | Sea of Thieves | Yes | Playable online; normal exit requires the unreleased runtime fix. |
 | The Witcher 3 | No | Currently crashes on launch. |
 
