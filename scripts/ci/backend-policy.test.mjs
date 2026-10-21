@@ -33,6 +33,18 @@ test('metadata recovery, consumer-independent timeout and empty-file updates are
   assert.ok(build.includes("'-p', 'msixvc', 'streaming::tests'"));
 });
 
+test('resumed encrypted launch images keep their final page and launch reports damage without panicking', async () => {
+  const lock = JSON.parse(await fs.readFile('assets/backend-source.lock.json', 'utf8'));
+  assert.ok(lock.patches.some(p => p.file === 'xodus-encrypted-resume.patch'));
+  assert.ok(lock.patches.findIndex(p => p.file === 'xodus-metadata-recovery.patch') <
+    lock.patches.findIndex(p => p.file === 'xodus-encrypted-resume.patch'));
+  const patch = await fs.readFile('assets/xodus-encrypted-resume.patch', 'utf8');
+  for (const expected of ['prepare_resume', 'content.length.div_ceil(4096) * 4096',
+    'streaming_encrypted_resume_keeps_final_page_and_refetches_trimmed_file',
+    '!resume::is_stored(out, k, v1)', 'Repair the game to download it again']) assert.ok(patch.includes(expected), expected);
+  assert.doesNotMatch(patch, /diff --git a\/.*(?:tokens\/|login\.rs|license\.rs|package_plan\.rs)/);
+});
+
 test('ticket diagnostics preserve requests, signature verification and non-retryable refusals', async () => {
   const lock = JSON.parse(await fs.readFile('assets/backend-source.lock.json', 'utf8'));
   assert.ok(lock.patches.some(p => p.file === 'xodus-ticket-diagnostics.patch'));

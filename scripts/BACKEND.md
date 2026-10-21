@@ -105,6 +105,13 @@ from an unverified offset. An exclusive folder lock prevents concurrent writers.
 CDN URLs/credentials are never stored in the journal. Restart refreshes normal
 package authentication/URLs, then restores matching checkpoints.
 
+Files kept encrypted for launch (`keep_encrypted`) are stored as whole 4 KiB
+XTS pages. Restoring a completed checkpoint keeps that padded final page. Repair
+skips a file with matching package hashes only when its size on disk is also
+complete, so a launch image trimmed by an earlier backend is downloaded again
+instead of failing at launch with `early eof`. Launch reports an undecryptable
+image as an error asking for Repair rather than panicking.
+
 The launcher probes `streaming --help` before enabling these optional features.
 Older backends can still download without numeric progress or pause controls.
 
