@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix resolving game editions whose non-installable bonus items reference the parent bundle.
 - Fix Jurassic World Evolution 3 aborting during app-constrained notification registration at startup.
 - Fix repeated Xbox task-queue termination requests leaving games waiting during world cleanup or shutdown.
 

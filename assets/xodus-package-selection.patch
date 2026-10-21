@@ -218,10 +218,10 @@ index b2cbecf..8f165b9 100644
  pub async fn get_packages(
 diff --git a/crates/xodus-cli/src/package_plan.rs b/crates/xodus-cli/src/package_plan.rs
 new file mode 100644
-index 0000000..92d93a7
+index 0000000..4365cc7
 --- /dev/null
 +++ b/crates/xodus-cli/src/package_plan.rs
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,245 @@
 +//! Public Store metadata only. A plan is not an entitlement or a download URL.
 +use std::collections::{BTreeMap, HashSet};
 +use serde_json::{Value, json};
@@ -305,7 +305,8 @@ index 0000000..92d93a7
 +    let has_desktop = choices.values().any(|c| c.platform == "Windows.Desktop");
 +    let mut children: Vec<_> = if has_desktop { vec![] }
 +        else if !bundled.is_empty() { bundled.into_iter().collect() }
-+        else { licensed.into_iter().collect() };
++        else if kind == "Game" || kind == "GameAddOn" { licensed.into_iter().collect() }
++        else { vec![] };
 +    children.sort();
 +    if children.len() > MAX_PRODUCTS { return Err("Store bundle contains too many products".into()); }
 +    Ok((choices.into_values().collect(), children))
@@ -414,6 +415,27 @@ index 0000000..92d93a7
 +        let plan = from_products("9CCCCCCCCCCC",&BTreeMap::from([("9CCCCCCCCCCC".into(),bundle("9CCCCCCCCCCC",&[ROOT,CHILD])),(ROOT.into(),package(ROOT,"Windows.Desktop","MSIXVC")),(CHILD.into(),second)])).unwrap();
 +        assert!(plan.select(None).is_err()); assert!(plan.select(Some(CID)).is_ok());
 +        assert_eq!(plan.json("9CCCCCCCCCCC","US")["status"],"choice");
++    }
++    #[test] fn durable_entitlement_back_references_do_not_form_bundle_cycles() {
++        const DURABLE: &str = "9DDDDDDDDDDD";
++        let durable = json!({"ProductId":DURABLE,"ProductType":"Durable",
++            "DisplaySkuAvailabilities":[{
++                "Sku":{"Properties":{"Packages":[]}},
++                "Availabilities":[{"LicensingData":{"SatisfyingEntitlementKeys":[{
++                    "EntitlementKeys":[format!("big:{ROOT}:0010")]
++                }]}}]
++            }]});
++        let plan = from_products(ROOT, &BTreeMap::from([
++            (ROOT.into(), bundle(ROOT, &[CHILD,DURABLE])),
++            (CHILD.into(), package(CHILD,"Windows.Desktop","MSIXVC")),
++            (DURABLE.into(), durable.clone()),
++        ])).unwrap();
++        assert_eq!(plan.select(None).unwrap(), CID);
++
++        let standalone = from_products(DURABLE, &BTreeMap::from([
++            (DURABLE.into(), durable),
++        ])).unwrap();
++        assert!(standalone.select(None).is_err());
 +    }
 +    #[test] fn cycles_missing_children_and_identity_fail_closed() {
 +        assert!(from_products(ROOT,&BTreeMap::from([(ROOT.into(),bundle(ROOT,&[ROOT]))])).is_err());
