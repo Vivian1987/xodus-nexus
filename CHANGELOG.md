@@ -4,6 +4,7 @@
 
 - Fix Jurassic World Evolution 3 aborting during app-constrained notification registration at startup.
 - Fix repeated Xbox task-queue termination requests leaving games waiting during world cleanup or shutdown.
+- Fix games such as Gears of War: E-Day failing to launch with `early eof` after a resumed download trimmed encrypted executables (#277).
 
 ## Backend 0.2.7
 

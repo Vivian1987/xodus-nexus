@@ -1,0 +1,100 @@
+diff --git a/crates/xodus-cli/src/commands/run.rs b/crates/xodus-cli/src/commands/run.rs
+index 147d01b..4fffceb 100644
+--- a/crates/xodus-cli/src/commands/run.rs
++++ b/crates/xodus-cli/src/commands/run.rs
+@@ -524,9 +524,17 @@ pub async fn run(
+ 
+         let mut i = File::open(&source_path).await.unwrap();
+ 
+-        xvd.mount_mem_fd(&mut i, &mut game_exe, file.1, *full_key, |_, _| {})
++        if let Err(error) = xvd
++            .mount_mem_fd(&mut i, &mut game_exe, file.1, *full_key, |_, _| {})
+             .await
+-            .unwrap();
++        {
++            eprintln!(
++                "failed to decrypt package image {}: {}. Repair the game to download it again.",
++                file.0, error
++            );
++            cleanup().await;
++            return ExitCode::FAILURE;
++        }
+ 
+         let stdf = game_exe.into_std().await;
+ 
+diff --git a/crates/xodus-cli/src/commands/streaming.rs b/crates/xodus-cli/src/commands/streaming.rs
+index 4c4e470..92b37b2 100644
+--- a/crates/xodus-cli/src/commands/streaming.rs
++++ b/crates/xodus-cli/src/commands/streaming.rs
+@@ -533,7 +533,7 @@ where
+             if url.starts_with("file://") && offset != job.content.length {
+                 offset = 0;
+             }
+-            resume::prepare_output(&mut fout, offset).await?;
++            let offset = resume::prepare_resume(&mut fout, offset, &job.content).await?;
+             let mut lp = offset;
+ 
+             let progress = |pos, _| {
+diff --git a/crates/xodus-cli/src/commands/streaming_resume.rs b/crates/xodus-cli/src/commands/streaming_resume.rs
+index 1f1fa38..1917cbb 100644
+--- a/crates/xodus-cli/src/commands/streaming_resume.rs
++++ b/crates/xodus-cli/src/commands/streaming_resume.rs
+@@ -22,6 +22,58 @@ pub(super) async fn prepare_output(file: &mut tokio::fs::File, offset: u64) -> i
+     Ok(())
+ }
+ 
++/// Files kept encrypted are stored as whole 4 KiB XTS pages, so a completed
++/// file keeps its padded final page. A final page trimmed by an older resume
++/// cannot be decrypted at launch; such a file is downloaded again.
++pub(super) async fn prepare_resume(
++    file: &mut tokio::fs::File,
++    offset: u64,
++    content: &SegmentFile,
++) -> io::Result<u64> {
++    let stored = if content.keep_encrypted {
++        content.length.div_ceil(4096) * 4096
++    } else {
++        content.length
++    };
++    let offset = if offset == content.length && file.metadata().await?.len() < stored {
++        0
++    } else {
++        offset
++    };
++    prepare_output(file, if offset == content.length { stored } else { offset }).await?;
++    Ok(offset)
++}
++
++#[tokio::test]
++async fn streaming_encrypted_resume_keeps_final_page_and_refetches_trimmed_file() {
++    let content = |keep_encrypted| SegmentFile {
++        offset: 0,
++        length: 5000,
++        data_hashs: vec![],
++        keep_encrypted,
++    };
++    for (keep_encrypted, on_disk, offset, expected_offset, expected_len) in [
++        (true, 8192, 5000, 5000, 8192),
++        (true, 5000, 5000, 0, 0),
++        (false, 8192, 5000, 5000, 5000),
++        (true, 8192, 4096, 4096, 4096),
++    ] {
++        let root = tempfile::tempdir().unwrap();
++        let path = root.path().join("game.exe");
++        std::fs::write(&path, vec![7u8; on_disk]).unwrap();
++        let mut file = tokio::fs::OpenOptions::new()
++            .write(true)
++            .open(&path)
++            .await
++            .unwrap();
++        let offset = prepare_resume(&mut file, offset, &content(keep_encrypted))
++            .await
++            .unwrap();
++        assert_eq!(offset, expected_offset);
++        assert_eq!(std::fs::metadata(&path).unwrap().len(), expected_len);
++    }
++}
++
+ #[tokio::test]
+ async fn streaming_updated_file_is_trimmed_even_when_its_expected_length_is_zero_or_complete() {
+     for offset in [0, 4] {
