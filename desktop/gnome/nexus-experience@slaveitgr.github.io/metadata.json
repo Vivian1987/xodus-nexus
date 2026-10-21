@@ -1,0 +1,9 @@
+{
+  "uuid": "nexus-experience@slaveitgr.github.io",
+  "name": "Nexus Fullscreen Experience",
+  "description": "Reversible Xbox mode, native window switcher and Nexus Guide focus bridge. GNOME Shell 51 only.",
+  "shell-version": ["51"],
+  "session-modes": ["user"],
+  "version": 4,
+  "url": "https://github.com/domsvoboda/xodus-nexus"
+}

@@ -1,0 +1,24 @@
+.handheld-compatibility-entry { display: inline-flex; align-items: center; gap: 9px; text-align: left; }
+.handheld-compatibility-entry .lucide { width: 20px; height: 20px; flex-shrink: 0; }
+.handheld-compatibility-entry .lucide:last-child { margin-left: auto; }
+.handheld-compatibility-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 24px; background: #000b; }
+.handheld-compatibility-dialog { position: relative; box-sizing: border-box; width: min(760px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; color: var(--text, #f5f6f7); background: var(--panel, #222529); border: 1px solid var(--line, #49505a); border-radius: 14px; padding: 28px; box-shadow: 0 24px 80px #0008; }
+.handheld-dialog-close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; padding: 8px; color: inherit; background: transparent; border: 0; border-radius: 6px; }
+.handheld-dialog-close .lucide { width: 22px; height: 22px; }
+.handheld-dialog-heading { display: flex; align-items: center; gap: 18px; padding-right: 22px; }
+.handheld-dialog-heading h2 { margin: 0 0 6px; font-size: 22px; }
+.handheld-game-title { margin: 0; color: var(--muted, #bec6cf); overflow-wrap: anywhere; }
+.handheld-public-icon { display: grid; grid-template-columns: repeat(2, 30px); gap: 6px; flex-shrink: 0; color: var(--accent, #83d149); }
+.handheld-public-icon .lucide { width: 28px; height: 28px; }
+.handheld-public-icon .lucide:first-child { grid-column: span 2; width: 60px; height: 42px; }
+.handheld-compatibility-dialog > p { line-height: 1.5; }
+.handheld-criteria { list-style: none; margin: 22px 0; padding: 0; display: grid; gap: 12px; }
+.handheld-criteria li { display: flex; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line, #49505a); }
+.handheld-criteria .lucide { width: 20px; height: 20px; margin-top: 2px; flex-shrink: 0; }
+.handheld-criteria p { margin: 4px 0; line-height: 1.4; color: var(--muted, #bec6cf); }
+.handheld-criteria small { color: var(--muted, #bec6cf); }
+.handheld-criteria [data-criterion-state="optimized"] > .lucide { color: var(--accent, #83d149); }
+.handheld-rating-context { padding: 12px; background: #0003; border: 1px solid var(--line, #49505a); border-radius: 8px; }
+.handheld-dialog-actions { display: flex; justify-content: flex-end; }
+.handheld-compatibility-dialog button:focus-visible { outline: 2px solid var(--accent, #83d149); outline-offset: 3px; }
+@media (max-width: 550px) { .handheld-compatibility-backdrop { padding: 10px; } .handheld-compatibility-dialog { padding: 22px 18px; max-height: calc(100dvh - 20px); } .handheld-public-icon { display: none; } }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add optional Nexus Game Bar with controller navigation, audio/system widgets, Spotify desktop playback, local microphone testing and Nexus screenshot gallery.
+- Add optional GNOME Shell 51 Fullscreen Experience, reversible window policies, themed native switcher and an explicit restart/login handoff.
+- Add profile details, account-bound social services, isolated official Cloud/Remote Play website players and local Play later/history pages through More.
+- Add desktop preferences, opt-in download notifications/shortcuts, rate display units and informational Windows handheld metadata.
+- Add opt-in per-game GameMode, stricter owned Proton-prefix preparation and Debian sandbox-pair verification while retaining AppImage packaging.
+
 - Fix Jurassic World Evolution 3 aborting during app-constrained notification registration at startup.
 - Fix repeated Xbox task-queue termination requests leaving games waiting during world cleanup or shutdown.
 

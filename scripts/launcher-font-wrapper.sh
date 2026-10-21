@@ -37,7 +37,10 @@ if [ -n "${LD_PRELOAD-}" ]; then
   fi
   unset nexus_filtered_preload
 fi
-app_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+# Native package alternatives and application-menu launchers may reach this
+# wrapper through symlinks outside the directory containing its native binary.
+launcher_path=$(readlink -f -- "$0") || exit 1
+app_root=$(CDPATH= cd -- "$(dirname -- "$launcher_path")" && pwd) || exit 1
 binary="$app_root/xodus-nexus.bin"
 # Native helper modes must retain their normal behavior, including Crashpad.
 if [ "${ELECTRON_RUN_AS_NODE-}" = 1 ]; then exec "$binary" "$@"; fi

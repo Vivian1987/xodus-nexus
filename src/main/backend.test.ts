@@ -15,7 +15,7 @@ vi.mock('./process.js', async importOriginal => {
       const marker = (await fs.readFile(cmd))[63];
       return { code: 0, output: args[0] === 'streaming' ? '--selected-content-id\n' + ([3,5].includes(marker) ? '--progress-json\n--control-stdin\n' : '') + (marker === 3 ? '--download-limit-kib\n' : '') : args[0] === 'run' ? (marker === 2 ? '--unsupported' : '--materialize-chain') :
         (marker === 1 ? 'xodus-cli 0.1.0\n  login    Login\n  streaming    Streaming\n' :
-        'xodus-cli 0.1.0\n  account    Account\n  login    Login\n  logout    Logout\n  download    Download\n  streaming    Streaming\n  run    Run\n  resolve-package    Resolve packages\n' + (marker === 4 ? '' : '\nOptions:\n  --external-webview-stdio  External UI\n')) };
+        'xodus-cli 0.1.0\n  account    Account\n  login    Login\n  logout    Logout\n  download    Download\n  streaming    Streaming\n  run    Run\n  resolve-package    Resolve packages\n' + (marker === 6 ? '  social    Xbox social\n' : '') + (marker === 4 ? '' : '\nOptions:\n  --external-webview-stdio  External UI\n')) };
     }
     if (cmd.endsWith('/xodus-service')) throw new Error('Service must never be started by installer tests');
     if (['git', 'cargo', 'rustc', 'protoc'].includes(cmd)) return { code: 1, output: 'Build tool intentionally absent' };
@@ -42,6 +42,15 @@ describe('prebuilt backend', () => {
       expect(status.capabilities.streamingControls).toBe(supported);
       expect(status.capabilities.streamingBandwidthLimit).toBe(supported);
       expect(status.capabilities.packageSelection).toBe(true);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it.each([false, true])('advertises social only when the selected binary exposes the command: %s', async supported => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-social-caps-'));
+    try {
+      const cli = path.join(root, 'target/release/xodus-cli'); await fs.mkdir(path.dirname(cli), { recursive: true });
+      const bytes = elf(); if (supported) bytes[63] = 6; await fs.writeFile(cli, bytes, { mode: 0o755 });
+      const status = await new BackendManager(root, root, () => {}, () => false).refresh();
+      expect(status.capabilities.social).toBe(supported);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it('does not infer bandwidth limiting from pause/resume support alone', async () => {

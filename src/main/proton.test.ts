@@ -4,8 +4,8 @@ import { chmod, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
-import { managedUnrealCultureGameIni, prefixUserLocale, prepareProtonRunner, syncPrefixUserLocale, syncUnrealCultureGameIni } from './proton.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { managedUnrealCultureGameIni, prefixUserLocale, prepareProtonRunner, secureProtonDirectory, syncPrefixUserLocale, syncUnrealCultureGameIni } from './proton.js';
 import { prepareGameWrapper } from './game-wrapper.js';
 import { defaultLaunchTools } from '../shared/launch-tools.js';
 import { preparedGameWine } from './game-launch.js';
@@ -18,6 +18,43 @@ afterEach(async () => {
 });
 
 describe('prepareProtonRunner', () => {
+  it('secures owned prefix directories without changing existing saves or safe permissions', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nexus-prefix-mode-')); created.push(root);
+    const prefix = path.join(root, 'pfx'); await mkdir(prefix); await chmod(prefix, 0o775);
+    const save = path.join(prefix, 'save.dat'); await writeFile(save, 'existing save'); await chmod(save, 0o664);
+    await secureProtonDirectory(prefix);
+    expect((await stat(prefix)).mode & 0o777).toBe(0o755);
+    expect(await readFile(save, 'utf8')).toBe('existing save'); expect((await stat(save)).mode & 0o777).toBe(0o664);
+    await chmod(prefix, 0o750); await secureProtonDirectory(prefix); expect((await stat(prefix)).mode & 0o777).toBe(0o750);
+    const fresh = path.join(root, 'new'); await secureProtonDirectory(fresh); expect((await stat(fresh)).mode & 0o777).toBe(0o700);
+    await secureProtonDirectory(path.join(root, 'absent'), false);
+  });
+  it.each([false,true])('rejects symlink prefixes and leaves their destination untouched (create: %s)', async create => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nexus-prefix-link-')); created.push(root);
+    const target = path.join(root, 'target'), link = path.join(root, 'link');
+    await mkdir(target); await chmod(target, 0o775); await symlink(target, link);
+    await expect(secureProtonDirectory(link, create)).rejects.toThrow('real directory');
+    expect((await stat(target)).mode & 0o777).toBe(0o775);
+  });
+  it('refuses a directory outside the effective account ownership', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nexus-prefix-owner-')); created.push(root); await chmod(root, 0o775);
+    const uid = process.geteuid!(); const owner = vi.spyOn(process, 'geteuid').mockReturnValue(uid + 1);
+    try { await expect(secureProtonDirectory(root, false)).rejects.toThrow('not owned'); }
+    finally { owner.mockRestore(); }
+    expect((await stat(root)).mode & 0o777).toBe(0o775);
+  });
+  it('repairs existing compat/pfx directory write bits before provisioning the runner', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nexus-prefix-runner-')); created.push(root);
+    const runtime = path.join(root, 'runtime'), compat = path.join(root, 'compat'), pfx = path.join(compat, 'pfx');
+    const wine = path.join(runtime, 'files/bin/wine'), system32 = path.join(pfx, 'drive_c/windows/system32');
+    await mkdir(path.dirname(wine), {recursive:true}); await mkdir(path.join(runtime, 'files/share/default_pfx'), {recursive:true}); await mkdir(system32, {recursive:true});
+    await writeFile(wine, '#!/bin/sh\nexit 0\n', {mode:0o700}); await writeFile(path.join(runtime, 'proton'), '#!/bin/sh\nexit 0\n', {mode:0o700});
+    for (const name of ['libvkd3d-utils-1.dll', 'dxgi.dll', 'd3d12.dll']) await writeFile(path.join(system32,name), 'ready');
+    await chmod(compat, 0o775); await chmod(pfx, 0o777);
+    const runner = await prepareProtonRunner(wine, compat, path.join(root,'steam'));
+    expect(runner).toBeDefined(); expect((await stat(compat)).mode & 0o022).toBe(0); expect((await stat(pfx)).mode & 0o022).toBe(0);
+    expect(await readFile(path.join(system32,'dxgi.dll'),'utf8')).toBe('ready');
+  });
   it('provisions every verified shared DXVK module, without modifying prior runtime symlinks', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nexus-dxvk-prefix-')); created.push(root);
     const runtime = path.join(root, 'runtime'), compat = path.join(root, 'compat');

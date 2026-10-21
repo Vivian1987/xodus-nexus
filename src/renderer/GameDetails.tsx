@@ -3,6 +3,8 @@ import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, Gamepad2, Images, 
 import type { AppSnapshot, Game, GameActivity, GameStoreDetails } from '../shared/types';
 import './game-details.css';
 import { Achievements } from './Achievements';
+import { HandheldCompatibilityEntry, HandheldCompatibilityDialog } from './HandheldCompatibilityView';
+import { PlayLaterButton } from './PlayLaterButton';
 
 export function formatMinutes(minutes?: number): string {
   if (minutes === undefined || !Number.isFinite(minutes) || minutes < 0) return 'Unavailable';
@@ -65,6 +67,7 @@ interface PageProps {
   achievements?: ReactNode;
 }
 interface ContentProps extends PageProps {
+  auth?: AppSnapshot['auth'];
   details?: GameStoreDetails;
   activity?: GameActivity;
   metadataLoading?: boolean;
@@ -74,11 +77,13 @@ interface ContentProps extends PageProps {
 }
 
 /** Descriptive data never gates Play or changes package/licensing decisions. */
-export function GameDetailsContent({ game, back, play, manage, notices, technical, achievements, details, activity, metadataLoading, activityLoading, metadataError, refresh }: ContentProps) {
+export function GameDetailsContent({ game, back, play, manage, notices, technical, achievements, auth, details, activity, metadataLoading, activityLoading, metadataError, refresh }: ContentProps) {
   const [gallery, setGallery] = useState<number>();
   const [expanded, setExpanded] = useState(false);
   const manageRef = useRef<HTMLDetailsElement>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [handheld, setHandheld] = useState<string>();
+  useEffect(() => setHandheld(undefined), [game.id]);
   const closeManage = (restoreFocus = true) => {
     if (manageRef.current) manageRef.current.open = false;
     setManageOpen(false);
@@ -127,7 +132,7 @@ export function GameDetailsContent({ game, back, play, manage, notices, technica
     </section>
     <div className="gd-page-content">
       <section className="gd-play-row" data-gamepad-action-row aria-label="Game actions and activity">
-        <div className="button-row gd-play-controls">{play}</div>
+        <div className="button-row gd-play-controls">{play}{auth ? <PlayLaterButton key={game.id} auth={auth} gameId={game.id} /> : null}</div>
         <div className="gd-stat"><Clock3 /><div><span>Xbox time played <button className="gd-refresh" aria-label="Refresh Xbox activity" disabled={activityLoading} onClick={refresh}>{activityLoading ? <LoaderCircle className="spin" /> : <RefreshCw />}</button></span><strong>{activityLoading && !activity ? 'Loading…' : formatMinutes(activity?.minutesPlayed)}</strong><small>{activityLoading ? 'Reading Xbox activity…' : activityNote(activity)}</small></div></div>
         <div className="gd-stat gd-last-played"><div><span>Last played</span><strong>{activityLoading && !activity ? 'Loading…' : lastPlayed}</strong></div></div>
         <details ref={manageRef} className="gd-actions" data-game-menu={manageOpen ? '' : undefined} onToggle={event => setManageOpen(event.currentTarget.open)}><summary aria-label="More game actions"><MoreHorizontal /><span>Manage</span></summary><div role="menu" aria-label="Manage game" onClick={event => { if ((event.target as HTMLElement).closest('button:not(:disabled)')) closeManage(); }}>{manage}</div></details>
@@ -139,11 +144,12 @@ export function GameDetailsContent({ game, back, play, manage, notices, technica
           <section className="gd-about"><h2>About the game</h2><p>{metadataLoading ? 'Loading game information…' : description ? expanded ? description : shortDescription : metadataError ? 'Game information could not be loaded. You can still play.' : 'Microsoft Store did not provide a description for this game.'}</p>{description !== shortDescription ? <button className="gd-text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Show less' : 'Read more'}<ChevronRight /></button> : null}</section>
           <section className="gd-gallery"><header><h2>Screenshots</h2>{images.length ? <button className="gd-text-button" onClick={() => setGallery(0)}><Images />View all {images.length}</button> : null}</header><div>{images.slice(0, 4).map((url, index) => <button key={url} aria-label={`Open screenshot ${index + 1}`} onClick={() => setGallery(index)}><Artwork loading="lazy" src={url} alt={`${game.title} screenshot ${index + 1}`} /></button>)}</div>{!images.length ? <p className="gd-empty">{metadataLoading ? 'Loading screenshots…' : 'No screenshots available.'}</p> : null}</section>
         </div>
-        <aside className="gd-facts"><h2>Game information</h2><dl><div><dt>Publisher</dt><dd>{details?.publisher ?? game.publisher ?? 'Unavailable'}</dd></div><div><dt>Release date</dt><dd>{release ?? 'Unavailable'}</dd></div><div><dt>Categories</dt><dd>{details?.categories.length ? details.categories.join(' · ') : 'Unavailable'}</dd></div>{details ? <div><dt>Metadata source</dt><dd>Microsoft Store</dd></div> : null}</dl><details><summary>Installation details</summary>{technical}</details></aside>
+        <aside className="gd-facts"><h2>Game information</h2><dl><div><dt>Publisher</dt><dd>{details?.publisher ?? game.publisher ?? 'Unavailable'}</dd></div><div><dt>Release date</dt><dd>{release ?? 'Unavailable'}</dd></div><div><dt>Categories</dt><dd>{details?.categories.length ? details.categories.join(' · ') : 'Unavailable'}</dd></div>{details ? <div><dt>Metadata source</dt><dd>Microsoft Store</dd></div> : null}</dl><div className="button-row" style={{ marginTop: 20 }}><HandheldCompatibilityEntry value={details?.handheldCompatibility} open={() => setHandheld(game.id)} /></div><details><summary>Installation details</summary>{technical}</details></aside>
       </div>
       <p className="gd-disclaimer">Xbox activity may be delayed or unavailable for some games. Local session time is not added to the Xbox total.</p>
     </div>
     {gallery !== undefined && images.length ? <Gallery title={game.title} images={images} initial={gallery} close={() => setGallery(undefined)} /> : null}
+    {handheld === game.id ? <HandheldCompatibilityDialog title={game.title} value={details?.handheldCompatibility} close={() => setHandheld(undefined)} /> : null}
   </section>;
 }
 
@@ -165,5 +171,5 @@ export function GameDetails(props: PageProps & { data: AppSnapshot }) {
     void window.launcher.getGameActivity(game.id, refresh).then(value => { if (request.current === id) setActivity(value); }).catch(() => { if (request.current === id) setActivity({ status: 'error' }); }).finally(() => { if (request.current === id) setActivityLoading(false); });
   }, [game.id, data.auth.username, data.auth.stored, data.auth.running, data.backend.binaryPath]);
   useEffect(() => { setActivity(undefined); loadActivity(); return () => { request.current++; }; }, [loadActivity]);
-  return <GameDetailsContent {...props} details={details} activity={activity} metadataLoading={metadataLoading} metadataError={metadataError} activityLoading={activityLoading} refresh={() => loadActivity(true)} achievements={<Achievements gameId={game.id} title={game.title} data={data} />} />;
+  return <GameDetailsContent {...props} auth={data.auth} details={details} activity={activity} metadataLoading={metadataLoading} metadataError={metadataError} activityLoading={activityLoading} refresh={() => loadActivity(true)} achievements={<Achievements gameId={game.id} title={game.title} data={data} />} />;
 }

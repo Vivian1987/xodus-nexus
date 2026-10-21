@@ -1,10 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Game, InstallRequest, LauncherApi, Settings } from '../shared/types.js';
+import type { DesktopGuideApi, Game, InstallRequest, LauncherApi, Settings } from '../shared/types.js';
 
 // Demo fixtures live in the main process (src/shared/demo-data.ts) and are
 // served over these same IPC channels when XODUS_DEMO=1, so the sandboxed
 // preload stays a thin passthrough. Store pages always use the live
 // Microsoft Store catalog. No real credentials, tokens or account data.
+const xboxModeEntryLifetimeMs = 5000;
+let pendingXboxModeEntryAt: number | undefined;
+const xboxModeEntryListeners = new Set<() => void>();
+ipcRenderer.on('xbox-mode-entry-requested', () => {
+  if (!xboxModeEntryListeners.size) { pendingXboxModeEntryAt = performance.now(); return; }
+  for (const callback of xboxModeEntryListeners) callback();
+});
+
 const api: LauncherApi = {
   getSnapshot: () => ipcRenderer.invoke('get-snapshot'),
   refreshBackend: () => ipcRenderer.invoke('backend-refresh'),
@@ -79,6 +87,101 @@ const api: LauncherApi = {
     return () => ipcRenderer.removeListener('operation-log', listener);
   },
   isDemoTour: () => process.env.XODUS_DEMO_TOUR === '1' && !process.env.XODUS_DEMO_CAPTURE_DIR,
+
+  getWindowFullscreen: () => ipcRenderer.invoke('window-fullscreen-get'),
+  setWindowFullscreen: enabled => ipcRenderer.invoke('window-fullscreen-set', enabled),
+  onWindowFullscreenChanged: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled);
+    ipcRenderer.on('window-fullscreen-changed', listener);
+    return () => ipcRenderer.removeListener('window-fullscreen-changed', listener);
+  },
+  onXboxModeEntryRequested: callback => {
+    xboxModeEntryListeners.add(callback);
+    const requestedAt = pendingXboxModeEntryAt;
+    pendingXboxModeEntryAt = undefined;
+    if (requestedAt !== undefined) {
+      const age = performance.now() - requestedAt;
+      if (age >= 0 && age < xboxModeEntryLifetimeMs) callback();
+    }
+    return () => { xboxModeEntryListeners.delete(callback); };
+  },
+  getFullscreenExperience: () => ipcRenderer.invoke('fullscreen-experience-get'),
+  setFullscreenExperience: enabled => ipcRenderer.invoke('fullscreen-experience-set', enabled),
+  getXboxModeRestartStatus: () => ipcRenderer.invoke('xbox-mode-restart-status'),
+  prepareXboxModeRestart: () => ipcRenderer.invoke('xbox-mode-restart-prepare'),
+  restartIntoXboxMode: token => ipcRenderer.invoke('xbox-mode-restart', token),
+  getBatteryStatus: () => ipcRenderer.invoke('battery-status'),
+  requestVoiceCapture: () => ipcRenderer.invoke('voice-capture-request'),
+  releaseVoiceCapture: () => ipcRenderer.invoke('voice-capture-release'),
+  onVoiceCaptureStop: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('voice-capture-stop', listener);
+    return () => ipcRenderer.removeListener('voice-capture-stop', listener);
+  },
+  getGuideSystem: () => ipcRenderer.invoke('guide-system-get'),
+  prepareGuidePower: action => ipcRenderer.invoke('guide-power-prepare', action),
+  executeGuideSystem: (action, token) => ipcRenderer.invoke('guide-system-execute', action, token),
+  openGuideSystemSettings: section => ipcRenderer.invoke('guide-system-settings', section),
+  getXboxFriends: refresh => ipcRenderer.invoke('xbox-social-friends', refresh),
+  getXboxChats: refresh => ipcRenderer.invoke('xbox-social-inbox', refresh),
+  getXboxConversation: (peer, refresh) => ipcRenderer.invoke('xbox-social-conversation', peer, refresh),
+  searchXboxPeople: query => ipcRenderer.invoke('xbox-social-search', query),
+  sendXboxMessage: (peer, text) => ipcRenderer.invoke('xbox-social-send', peer, text),
+  quitLauncher: () => ipcRenderer.invoke('quit-launcher'),
+  refreshXboxProfile: () => ipcRenderer.invoke('xbox-profile-refresh'),
+  openCloudGaming: () => ipcRenderer.invoke('cloud-gaming-open'),
+  getCloudGamingState: () => ipcRenderer.invoke('cloud-gaming-state'),
+  onCloudGamingState: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, state: import('../shared/cloud-gaming.js').CloudGamingState) => callback(state);
+    ipcRenderer.on('cloud-gaming-state', listener);
+    return () => ipcRenderer.removeListener('cloud-gaming-state', listener);
+  },
+  controlCloudGaming: command => ipcRenderer.invoke('cloud-gaming-control', command),
+  setCloudGamingObscured: obscured => ipcRenderer.invoke('cloud-gaming-obscured', obscured),
+  getLibraryProviders: () => ipcRenderer.invoke('library-providers'),
+  getBatteryPercentage: () => ipcRenderer.invoke('battery-percentage'),
+  openRemotePlay: () => ipcRenderer.invoke('remote-play-open'),
+  getRemotePlayState: () => ipcRenderer.invoke('remote-play-state'),
+  controlRemotePlay: command => ipcRenderer.invoke('remote-play-control', command),
+  setRemotePlayObscured: obscured => ipcRenderer.invoke('remote-play-obscured', obscured),
+  onRemotePlayState: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
+    ipcRenderer.on('remote-play-state', listener);
+    return () => ipcRenderer.removeListener('remote-play-state', listener);
+  },
+  getGuideAudio: () => ipcRenderer.invoke('guide-audio-get'),
+  setGuideAudio: patch => ipcRenderer.invoke('guide-audio-set', patch),
+  getGuideMixer: () => ipcRenderer.invoke('guide-mixer-get'),
+  controlGuideMixer: command => ipcRenderer.invoke('guide-mixer-control', command),
+  getGuidePerformance: () => ipcRenderer.invoke('guide-performance-get'),
+  getGuideGallery: () => ipcRenderer.invoke('guide-gallery-get'),
+  openGuideCapture: id => ipcRenderer.invoke('guide-gallery-open', id),
+  deleteGuideCapture: id => ipcRenderer.invoke('guide-gallery-delete', id),
+  getSpotifyState: () => ipcRenderer.invoke('guide-spotify-get'),
+  controlSpotify: command => ipcRenderer.invoke('guide-spotify-control', command),
+  captureLauncher: () => ipcRenderer.invoke('guide-capture'),
+  getCatalogDetails: (productId: string) => ipcRenderer.invoke('catalog-details', productId),
 };
 
 contextBridge.exposeInMainWorld('launcher', api);
+
+const desktopGuide: DesktopGuideApi = {
+  toggle: () => ipcRenderer.invoke('desktop-guide-toggle'),
+  close: () => ipcRenderer.invoke('desktop-guide-close'),
+  requestXboxModeEntry: () => ipcRenderer.invoke('desktop-guide-xbox-mode-entry'),
+  onInput: callback => {
+    const actions = ['up', 'down', 'left', 'right', 'accept', 'back', 'previous', 'next'] as const;
+    const listener = (_event: Electron.IpcRendererEvent, action: unknown) => {
+      if (typeof action === 'string' && actions.includes(action as typeof actions[number])) callback(action as typeof actions[number]);
+    };
+    ipcRenderer.on('desktop-guide-input', listener);
+    return () => ipcRenderer.removeListener('desktop-guide-input', listener);
+  },
+  navigate: (page: string, gameId?: string) => ipcRenderer.invoke('desktop-guide-navigate', page, gameId),
+  onNavigate: (callback: (value: { page: string; gameId?: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: { page: string; gameId?: string }) => callback(value);
+    ipcRenderer.on('desktop-guide-navigate', listener);
+    return () => ipcRenderer.removeListener('desktop-guide-navigate', listener);
+  },
+};
+contextBridge.exposeInMainWorld('desktopGuide', desktopGuide);

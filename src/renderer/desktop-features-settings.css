@@ -1,0 +1,8 @@
+.desktop-features-settings > p { color: var(--muted, #bec6cf); line-height: 1.5; }
+.desktop-features-settings .desktop-feature-toggle { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0 8px; }
+.desktop-feature-toggle input { flex: 0 0 auto; width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--accent, #83d149); }
+.desktop-features-settings small { display: block; color: var(--muted, #bec6cf); line-height: 1.5; }
+.desktop-feature-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.desktop-feature-actions button { display: inline-flex; align-items: center; gap: 8px; }
+.desktop-feature-actions .lucide { width: 19px; height: 19px; }
+.desktop-feature-status { font-size: 13px; margin-bottom: 9px; }

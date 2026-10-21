@@ -20,6 +20,12 @@ const defaultSettings: Settings = {
   market: 'neutral',
   parallelDownloads: 4,
   downloadLimitMiB: 0,
+  downloadSpeedUnit: 'bytes',
+  downloadNotifications: false,
+  createDesktopShortcut: false,
+  launchOnLogin: false,
+  launchInBackground: false,
+  minimizeToTray: false,
   winePath: '',
   externalXodusRoot: '',
   runtimeRoot: path.join(defaultDataRoot, 'runtimes'),
@@ -28,6 +34,7 @@ const defaultSettings: Settings = {
 
 export class StateStore {
   private writes: Promise<void> = Promise.resolve();
+  private settingsWrites: Promise<unknown> = Promise.resolve();
   private state: PersistedState = { games: [], downloads: [], settings: defaultSettings };
   private readonly file: string;
 
@@ -53,7 +60,10 @@ export class StateStore {
             ...task, status: 'paused' as const, canPause: true, controlPending: false,
             transferRate: undefined, phase: 'Paused — resume to reconnect and restore saved download checkpoints',
           } : task) : [],
-        settings: Object.fromEntries(Object.entries({ ...defaultSettings, ...parsed.settings, downloadLimitMiB }).filter(([key]) => key !== 'separateGameProcess')) as unknown as Settings,
+        settings: Object.fromEntries(Object.entries({ ...defaultSettings, ...parsed.settings, downloadLimitMiB,
+          downloadSpeedUnit: parsed.settings?.downloadSpeedUnit === 'bits' ? 'bits' : 'bytes',
+          ...Object.fromEntries(['downloadNotifications','createDesktopShortcut','launchOnLogin','launchInBackground','minimizeToTray'].map(key => [key, parsed.settings?.[key as keyof Settings] === true])),
+        }).filter(([key]) => key !== 'separateGameProcess')) as unknown as Settings,
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('State could not be loaded', error);
@@ -65,8 +75,8 @@ export class StateStore {
   get settings(): Settings { return this.state.settings; }
 
   save(): Promise<void> {
-    const data = JSON.stringify(this.state, null, 2);
     const write = this.writes.then(async () => {
+      const data = JSON.stringify(this.state, null, 2);
       await fs.mkdir(path.dirname(this.file), { recursive: true });
       const temporary = `${this.file}.tmp`;
       await fs.writeFile(temporary, data, { mode: 0o600 });
@@ -78,9 +88,18 @@ export class StateStore {
 
   async setSettings(patch: Partial<Settings>): Promise<Settings> {
     if (patch.downloadLimitMiB !== undefined) downloadLimitKiB(patch.downloadLimitMiB);
-    this.state.settings = { ...this.state.settings, ...patch };
-    await this.save();
-    return this.state.settings;
+    if (patch.downloadSpeedUnit !== undefined && !['bytes','bits'].includes(patch.downloadSpeedUnit)) throw Error('Invalid download speed display unit.');
+    for (const key of ['downloadNotifications','createDesktopShortcut','launchOnLogin','launchInBackground','minimizeToTray'] as const) {
+      if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw Error(`Invalid ${key} preference.`);
+    }
+    const write = this.settingsWrites.then(async () => {
+      const previous = this.state.settings;
+      this.state.settings = { ...previous, ...patch };
+      try { await this.save(); } catch (error) { this.state.settings = previous; throw error; }
+      return this.state.settings;
+    });
+    this.settingsWrites = write.catch(() => {});
+    return write;
   }
 
   async upsertGame(game: Game): Promise<Game> {

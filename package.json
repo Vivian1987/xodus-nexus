@@ -16,7 +16,8 @@
     "test:ci-tools": "node --test scripts/ci/*.test.mjs",
     "build": "npm run clean && npm run typecheck && npm run test && vite build && tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --linux AppImage --publish never",
-    "pack": "npm run build && electron-builder --linux dir --publish never"
+    "pack": "npm run build && electron-builder --linux dir --publish never",
+    "dist:deb": "npm run build && electron-builder --linux deb --publish never"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -49,21 +50,57 @@
       "assets/**/*",
       "!assets/fonts/**/*",
       "package.json",
-      "LICENSE"
+      "LICENSE",
+      "!assets/desktop/**/*"
     ],
-    "extraResources": [{ "from": "assets/fonts", "to": "fonts" }],
+    "extraResources": [
+      {
+        "from": "assets/fonts",
+        "to": "fonts"
+      },
+      {
+        "from": "assets/desktop",
+        "to": "desktop",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**/*",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "desktop/gnome",
+        "to": "gnome-extension",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "scripts/desktop/stage-gnome-experience.py",
+        "to": "desktop/stage-gnome-experience.py"
+      },
+      {
+        "from": "scripts/desktop/install-gamebar-service.py",
+        "to": "desktop/install-gamebar-service.py"
+      }
+    ],
     "afterPack": "scripts/launcher-fonts-after-pack.cjs",
     "linux": {
       "category": "Game",
       "icon": "assets/icon.png",
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ]
+    },
+    "deb": {
+      "maintainer": "Xodus Nexus contributors <slaveitgr@users.noreply.github.com>",
+      "afterInstall": "scripts/linux/deb-after-install.sh"
     }
   },
   "allowScripts": {
     "electron@44.8.0": true,
     "esbuild@0.25.12": true,
     "esbuild@0.21.5": true
-  }
+  },
+  "homepage": "https://github.com/domsvoboda/xodus-nexus"
 }

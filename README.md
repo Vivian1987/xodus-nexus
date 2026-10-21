@@ -89,6 +89,21 @@ system file pickers and sign-in windows may still need mouse or touch input.
 [Documentation](https://github.com/domsvoboda/xodus-nexus/wiki) ·
 [Report an issue](https://github.com/domsvoboda/xodus-nexus/issues)
 
+## Optional desktop features
+
+**More** adds profile details, Friends and chat, Game Pass, Cloud gaming, and local
+Play later/history. Settings add an optional controller Game Bar with desktop
+Spotify playback, local microphone testing, desktop preferences and a GNOME
+Shell 51 Fullscreen Experience. Existing Nexus pages, account setup and paths
+are retained. Desktop services, startup and download notifications are opt-in.
+
+Xbox party voice, external-game recording and automatic third-party library
+imports are not implemented. Cloud/Remote Play use isolated official website
+players; Linux streaming requires real-device validation. Handheld ratings are
+Windows catalog metadata, not Linux compatibility claims.
+
+[Setup, controls and limitations](docs/desktop-features.md)
+
 ## How it works
 
 | Component | Role |

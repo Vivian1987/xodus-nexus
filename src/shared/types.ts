@@ -1,4 +1,4 @@
-export type Page = 'home' | 'store' | 'library' | 'downloads' | 'settings';
+export type Page = 'home' | 'store' | 'library' | 'downloads' | 'settings' | 'cloud' | 'profile' | 'friends' | 'gamepass' | 'collections';
 
 export interface BackendCapabilities {
   commands: string[];
@@ -18,6 +18,8 @@ export interface BackendCapabilities {
   packageSelection?: boolean;
   run: boolean;
   version?: string;
+
+  social?: boolean;
 }
 
 export interface AuthStatus {
@@ -30,6 +32,12 @@ export interface AuthStatus {
   lastResult?: 'success' | 'failed';
   lastAction?: 'login' | 'logout';
   note: string;
+
+  profile?: import('./xbox-profile.js').XboxSelfProfile;
+  profileSource?: 'live' | 'cache';
+  profileRefreshing?: boolean;
+  profileError?: string;
+  storeAccount?: import('./account-identities.js').StoreAccountIdentity;
 }
 
 export interface GamePassSubscription {
@@ -85,6 +93,7 @@ export interface RuntimeStatus {
 
 export interface GameLaunchTools {
   dualSenseCompatibility?: boolean;
+  gameMode?: boolean;
   mangoHud: boolean;
   gamescope: boolean;
   gamescopeArgs: string;
@@ -177,6 +186,13 @@ export interface Settings {
   runtimeRoot: string;
   verboseLogs: boolean;
   firstRunCompleted?: boolean;
+
+  downloadNotifications?: boolean;
+  downloadSpeedUnit?: 'bits' | 'bytes';
+  createDesktopShortcut?: boolean;
+  launchOnLogin?: boolean;
+  launchInBackground?: boolean;
+  minimizeToTray?: boolean;
 }
 
 export interface LauncherUpdate {
@@ -224,6 +240,10 @@ export interface AppSnapshot {
   gameOperation?: GameOperation;
   gameUpdates?: Record<string, GameUpdate>;
   downloadProgressSupported?: boolean;
+
+  desktopSettings?: DesktopSettingsStatus;
+  guideForeground?: import('./desktop-shell.js').DesktopForegroundApp;
+  fullscreenExperience?: import('./fullscreen-experience.js').FullscreenExperienceStatus;
 }
 
 export interface InstallRequest {
@@ -285,6 +305,8 @@ export interface CatalogProduct {
   installability: 'supported' | 'unsupported' | 'unknown';
   packageFormat?: string;
   supportNote: string;
+
+  handheldCompatibility?: import('./handheld-compatibility.js').HandheldCompatibility;
 }
 
 /** Public catalog data only, never an ownership/installation decision. */
@@ -297,6 +319,8 @@ export interface GameStoreDetails {
   categories: string[];
   screenshots: string[];
   releaseDate?: string;
+
+  handheldCompatibility?: import('./handheld-compatibility.js').HandheldCompatibility;
 }
 
 export interface GameActivity {
@@ -406,4 +430,84 @@ export interface LauncherApi {
   onSnapshot(callback: (snapshot: AppSnapshot) => void): () => void;
   onOperationLog(callback: (entry: { scope: string; line: string }) => void): () => void;
   isDemoTour(): boolean;
+
+  getWindowFullscreen(): Promise<boolean>;
+  setWindowFullscreen(enabled: boolean): Promise<boolean>;
+  onWindowFullscreenChanged(callback: (enabled: boolean) => void): () => void;
+  onXboxModeEntryRequested(callback: () => void): () => void;
+  getFullscreenExperience(): Promise<import('./fullscreen-experience.js').FullscreenExperienceStatus>;
+  setFullscreenExperience(enabled: boolean): Promise<import('./fullscreen-experience.js').FullscreenExperienceStatus>;
+  getXboxModeRestartStatus(): Promise<import('./fullscreen-experience.js').XboxModeRestartStatus>;
+  prepareXboxModeRestart(): Promise<import('./guide-system.js').GuidePowerConfirmation>;
+  restartIntoXboxMode(token: string): Promise<void>;
+  getBatteryStatus(): Promise<import('./fullscreen-experience.js').BatteryPowerStatus>;
+  requestVoiceCapture(): Promise<void>;
+  releaseVoiceCapture(): Promise<void>;
+  onVoiceCaptureStop(callback: () => void): () => void;
+  getGuideSystem(): Promise<import('./guide-system.js').GuideSystemState>;
+  prepareGuidePower(action: import('./guide-system.js').GuidePowerAction): Promise<import('./guide-system.js').GuidePowerConfirmation>;
+  executeGuideSystem(action: import('./guide-system.js').GuideSystemAction, confirmationToken?: string): Promise<import('./guide-system.js').GuideSystemActionResult>;
+  openGuideSystemSettings(section: import('./guide-system.js').GuideSystemSettingsSection): Promise<void>;
+  getXboxFriends(refresh?: boolean): Promise<import('./xbox-social.js').XboxSocialResult>;
+  getXboxChats(refresh?: boolean): Promise<import('./xbox-social.js').XboxSocialResult>;
+  getXboxConversation(peerXuid: string, refresh?: boolean): Promise<import('./xbox-social.js').XboxSocialResult>;
+  searchXboxPeople(query: string): Promise<import('./xbox-social.js').XboxSocialResult>;
+  sendXboxMessage(peerXuid: string, text: string): Promise<import('./xbox-social.js').XboxSocialResult>;
+  quitLauncher(): Promise<void>;
+  refreshXboxProfile(): Promise<void>;
+  openCloudGaming(): Promise<void>;
+  getCloudGamingState(): Promise<import('./cloud-gaming.js').CloudGamingState>;
+  onCloudGamingState(callback: (state: import('./cloud-gaming.js').CloudGamingState) => void): () => void;
+  controlCloudGaming(command: import('./cloud-gaming.js').CloudGamingCommand): Promise<import('./cloud-gaming.js').CloudGamingState>;
+  setCloudGamingObscured(obscured: boolean): Promise<void>;
+  openRemotePlay(): Promise<void>;
+  getRemotePlayState(): Promise<import('./remote-play.js').RemotePlayState>;
+  onRemotePlayState(callback: (state: import('./remote-play.js').RemotePlayState) => void): () => void;
+  controlRemotePlay(command: import('./remote-play.js').RemotePlayCommand): Promise<import('./remote-play.js').RemotePlayState>;
+  setRemotePlayObscured(obscured: boolean): Promise<void>;
+  getBatteryPercentage(): Promise<number | null>;
+  getLibraryProviders(): Promise<import('./library-providers.js').LibraryProviderStatus[]>;
+  getGuideAudio(): Promise<GuideAudio>;
+  setGuideAudio(patch: { volume?: number; muted?: boolean }): Promise<GuideAudio>;
+  getGuideMixer(): Promise<import('./guide-mixer.js').GuideMixerState>;
+  controlGuideMixer(command: import('./guide-mixer.js').GuideMixerCommand): Promise<import('./guide-mixer.js').GuideMixerState>;
+  getGuidePerformance(): Promise<import('./guide-widgets.js').GuidePerformance>;
+  getGuideGallery(): Promise<import('./guide-widgets.js').GuideGallery>;
+  openGuideCapture(id: string): Promise<void>;
+  deleteGuideCapture(id: string): Promise<void>;
+  getSpotifyState(): Promise<import('./spotify.js').SpotifyState>;
+  controlSpotify(command: import('./spotify.js').SpotifyCommand): Promise<import('./spotify.js').SpotifyState>;
+  captureLauncher(): Promise<string>;
+  getCatalogDetails(productId: string): Promise<GameStoreDetails | undefined>;
+}
+
+export interface DesktopGuideApi {
+  toggle(): Promise<void>;
+  close(): Promise<void>;
+  navigate(page: string, gameId?: string): Promise<void>;
+  requestXboxModeEntry(): Promise<void>;
+  onNavigate(callback: (value: { page: string; gameId?: string }) => void): () => void;
+  onInput(callback: (action: import('./desktop-shell.js').GuideInputAction) => void): () => void;
+}
+
+export type GuideAudio = { available: true; volume: number; muted: boolean } | { available: false; reason: string };
+
+export interface DesktopSettingsStatus {
+  canSetAutostart: boolean;
+  autostartReason?: string;
+  fullscreenExperience: boolean;
+  fullscreenExperienceSource: 'environment' | 'gnome-extension' | 'none';
+  sessionType?: string;
+  desktop?: string;
+  /** Unknown until attempted; a successful Tray construction does not prove shell visibility. */
+  trayAvailable?: boolean;
+  gameBarResident?: boolean;
+  gameBarServiceEnabled?: boolean;
+  /** Native joystick listener ownership; never a claim about a pressed button. */
+  gameBarController?: {
+    status: 'starting' | 'listening' | 'unavailable' | 'error' | 'stopped';
+    devices: number;
+    reason?: string;
+    navigationSurface?: 'none' | 'guide' | 'switcher';
+  };
 }

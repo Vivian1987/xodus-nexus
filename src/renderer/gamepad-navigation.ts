@@ -1,3 +1,5 @@
+import { dispatchBackHandlers } from './guide-navigation';
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 export type PadAction = Direction | 'accept' | 'back' | 'options' | 'previous-page' | 'next-page';
 type Rect = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'>;
@@ -189,7 +191,10 @@ export function installGamepadNavigation(win: Window, options: Options): () => v
   const pointerMove = (event: PointerEvent) => { if (event.movementX || event.movementY) pointer(); };
   const keyboard = (event: KeyboardEvent) => {
     if (!escapeFromPad) {
-      if (picker && event.key === 'Escape') { closePicker(true); event.stopImmediatePropagation(); }
+      if (event.key === 'Escape') {
+        const consumed = picker ? (closePicker(true), true) : dispatchBackHandlers(win, currentScope());
+        if (consumed) { event.preventDefault(); event.stopImmediatePropagation(); }
+      }
       pointer();
     }
   };
@@ -256,6 +261,10 @@ export function installGamepadNavigation(win: Window, options: Options): () => v
   };
   const back = () => {
     if (picker) { closePicker(true); return; }
+    if (dispatchBackHandlers(win, scope)) {
+      if (scope === doc) { pendingDetail = undefined; detailReturn = undefined; }
+      return;
+    }
     if (scope instanceof HTMLElement) {
       if (scope.hasAttribute('data-game-menu')) {
         escapeFromPad = true;

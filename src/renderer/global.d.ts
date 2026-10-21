@@ -1,7 +1,7 @@
-import type { LauncherApi } from '../shared/types';
+import type { DesktopGuideApi, LauncherApi } from '../shared/types';
 
 declare global {
-  interface Window { launcher: LauncherApi }
+  interface Window { launcher: LauncherApi; desktopGuide: DesktopGuideApi }
 }
 
 export {};

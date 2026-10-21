@@ -28,3 +28,7 @@ bundled/
 docs/internal/
 *.backup-*
 *.tmp*
+
+# Generated Python caches are never contribution source.
+__pycache__/
+*.py[cod]

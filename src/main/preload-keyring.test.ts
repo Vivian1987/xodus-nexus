@@ -6,11 +6,11 @@ import { ModuleKind, transpileModule } from 'typescript';
 it('delivers automatic wallet status and removes exactly its own preload listener', () => {
   let api: any;
   const on = vi.fn(), removeListener = vi.fn(), invoke = vi.fn();
-  const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: unknown) => { api = value; } }, ipcRenderer: { on, removeListener, invoke } };
+  const electron = { contextBridge: { exposeInMainWorld: (name: string, value: unknown) => { if (name === 'launcher') api = value; } }, ipcRenderer: { on, removeListener, invoke } };
   const js = transpileModule(readFileSync('src/preload/index.cts', 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS } }).outputText;
   runInNewContext(js, { exports: {}, require: (name: string) => { expect(name).toBe('electron'); return electron; } });
   const callback = vi.fn(), dispose = api.onKeyringStatus(callback);
-  const [channel, listener] = on.mock.calls[0];
+  const [channel, listener] = on.mock.calls.find(([name]) => name === 'keyring-state')!;
   expect(channel).toBe('keyring-state');
   const status = { state: 'ready', canStart: false, gameMode: true, message: 'Ready' };
   listener({ sender: 'not exposed' }, status);

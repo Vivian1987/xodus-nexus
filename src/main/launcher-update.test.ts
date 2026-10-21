@@ -61,4 +61,28 @@ describe('AppImage updater', () => {
     await expect(updater.install()).rejects.toThrow('owned');
     const dev = new LauncherUpdater('0.2.2', undefined, root, () => {}, fetcher); await dev.initialize(); expect(dev.state.canInstall).toBe(false);
   });
+  it('ignores malformed release rows and duplicate assets while retaining original Nexus names', () => {
+    const duplicate = release('0.2.5'); duplicate.assets.push(duplicate.assets[0]);
+    const malformed = { ...release('0.2.6'), assets: {} };
+    expect(launcherCandidate([null, 1, {}, malformed, duplicate, release('0.2.4')] as never, '0.2.2')?.version).toBe('0.2.4');
+  });
+  it.each(['metadata-size', 'metadata-utf8', 'api-redirect', 'checksum-size'])('keeps the installed image intact on bounded transport failure: %s', async scenario => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-update-bounds-')); roots.push(root);
+    const target = path.join(root, 'Launcher.AppImage'); await fs.writeFile(target, image(1), { mode: 0o700 });
+    const fetcher = (async (input: string | URL | Request) => {
+      if (String(input).includes('api.github')) {
+        if (scenario === 'metadata-size') return new Response('[]', { headers: { 'content-length': '2000001' } });
+        if (scenario === 'metadata-utf8') return new Response(new Uint8Array([0xc3, 0x28]));
+        if (scenario === 'api-redirect') return new Response(null, { status: 302, headers: { location: 'https://example.test/releases' } });
+        return new Response(JSON.stringify([release()]));
+      }
+      if (String(input).endsWith('.sha512sum')) return new Response(' '.repeat(4097));
+      throw Error('An unverified executable must never be downloaded.');
+    }) as typeof fetch;
+    const updater = new LauncherUpdater('0.2.2', target, root, () => {}, fetcher); await updater.initialize(); await updater.check();
+    if (scenario === 'checksum-size') await expect(updater.install()).rejects.toThrow('download limit');
+    else { expect(updater.state.error).toBeTruthy(); await expect(updater.install()).rejects.toThrow('Check for a newer'); }
+    expect(await fs.readFile(target)).toEqual(image(1));
+    expect(await fs.readdir(root)).toEqual(['Launcher.AppImage']); expect(updater.state.updating).toBeFalsy();
+  });
 });

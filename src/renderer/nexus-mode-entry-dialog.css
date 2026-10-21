@@ -1,0 +1,15 @@
+.xbox-mode-entry-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: #000b; }
+.xbox-mode-entry-dialog { width: 520px; max-width: 100%; min-height: 305px; max-height: calc(100dvh - 40px); display: flex; flex-direction: column; overflow: auto; border: 1px solid var(--line, #48505b); border-radius: 8px; background: var(--surface, #282b31); color: inherit; box-shadow: 0 8px 30px #0006; font-size: 14px; }
+.xbox-mode-entry-message { flex: 1; padding: 24px; }
+.xbox-mode-entry-message h2 { margin: 0; font-size: 20px; line-height: 24px; font-weight: 600; }
+.xbox-mode-entry-message p { margin: 12px 0 0; font-size: 14px; line-height: 20px; }
+.xbox-mode-entry-message .xbox-mode-entry-status { color: var(--muted, #bec6cf); }
+.xbox-mode-entry-message .xbox-mode-entry-error { color: var(--danger, #f17070); }
+.xbox-mode-entry-actions { display: grid; gap: 8px; padding: 24px; border-top: 1px solid var(--line, #48505b); background: #0002; }
+.xbox-mode-entry-actions button { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line, #48505b); border-radius: 4px; background: var(--surface-hover, #343840); color: inherit; font-size: 14px; line-height: 20px; cursor: pointer; }
+.xbox-mode-entry-actions button:hover:not(:disabled) { background: #49505a; }
+.xbox-mode-entry-actions .xbox-mode-entry-restart { border-color: var(--green, #65a945); background: var(--green, #65a945); color: #fff; }
+.xbox-mode-entry-actions .xbox-mode-entry-restart:hover:not(:disabled) { background: var(--green-hover, #75b755); }
+.xbox-mode-entry-actions button:disabled { opacity: .5; cursor: default; }
+.xbox-mode-entry-actions button:focus-visible, html[data-gamepad-navigation] .xbox-mode-entry-dialog [data-gamepad-focus] { outline: 2px solid #d4e2ce !important; outline-offset: 2px; box-shadow: none; }
+@media (max-width: 560px) { .xbox-mode-entry-message, .xbox-mode-entry-actions { padding: 20px; } }

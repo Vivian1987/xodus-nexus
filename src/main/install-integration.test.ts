@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   liveImport: vi.fn(), offlineImport: vi.fn(), showMessage: vi.fn(),
   trash: vi.fn(), deleteFiles: vi.fn(), removeShortcut: vi.fn(async () => {}), signals: [] as string[],
   notifications: [] as { title: string; body: string }[],
+  streamEvents: [] as string[], guideVisibility: undefined as undefined | ((visible: boolean) => void),
+  profile: undefined as any, profileSelected: undefined as string | undefined, window: undefined as any,
   holdCancellation: false,
   holdAccountReads: false,
   accountReads: [] as ((result: { code: number; output: string }) => void)[],
@@ -28,10 +30,12 @@ vi.mock('electron', () => ({
   Notification: class { static isSupported() { return true; } constructor(private options: { title: string; body: string }) {} on() {} show() { h.notifications.push(this.options); } },
   app: { requestSingleInstanceLock: () => true, getPath: (name: string) => path.join(h.root, name),
     setPath: vi.fn(), on: (name: string, callback: (...args: any[]) => any) => h.events.set(name, callback), once: vi.fn(),
-    whenReady: () => Promise.resolve(), getVersion: () => '0.0.0', isPackaged: false, quit: h.quit },
+    getAppPath: () => h.root, whenReady: () => Promise.resolve(), getVersion: () => '0.0.0', isPackaged: false, quit: h.quit },
   ipcMain: { handle: (name: string, callback: (...args: any[]) => any) => h.handlers.set(name, callback) },
-  BrowserWindow: class { webContents = { on: vi.fn(), send: vi.fn(), setWindowOpenHandler: vi.fn() };
-    on() {} once() {} show() {} focus() {} isDestroyed() { return false; } async loadFile() {} },
+  powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, session: { defaultSession: {} },
+  BrowserWindow: class { webContents = { id: 1, mainFrame: {}, isDestroyed: () => false, on: vi.fn(), send: vi.fn(), setWindowOpenHandler: vi.fn(), capturePage: vi.fn() };
+    constructor() { h.window = this; } on() {} once() {} show() {} focus() {} isDestroyed() { return false; }
+    isMinimized() { return false; } isVisible() { return true; } isFocused() { return true; } isFullScreen() { return false; } async loadFile() {} },
   screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
   dialog: { showMessageBox: h.showMessage }, nativeImage: {}, shell: { trashItem: h.trash }, powerSaveBlocker: { start: h.blockDisplay, stop: h.releaseDisplay },
 }));
@@ -40,7 +44,34 @@ vi.mock('./backend.js', () => ({ LINUX_RUN_PATCH: 'test-patch', BackendManager: 
   setExternalRoot() {} } }));
 vi.mock('./runtime.js', () => ({ RuntimeManager: class { get current() { return h.runtime; } async refresh() {} async checkNexus() {} setRoot() {} } }));
 vi.mock('./catalog.js', () => ({ CatalogService: class { async artwork() { return new Map(); } posters = h.posters; } }));
-vi.mock('./account-profile.js', () => ({ AccountProfile: class { async select() {} cancel() {} } }));
+vi.mock('./account-profile.js', () => ({ AccountProfile: class {
+  get value() { return h.profile; } get source() { return 'cache'; } get refreshing() { return false; }
+  async select(account?: string) { h.profileSelected = account; } matchesAccount(account?: string) { return !!account && account === h.profileSelected; }
+  async settled() {} cancel() {}
+} }));
+vi.mock('./gamebar-controller.js', () => ({ controllerSessionActive: vi.fn(async () => false), GameBarController: class {
+  current = { status: 'stopped', devices: 0 }; start() {} setSurface() {} setSessionBlocked() {} dispose() {}
+} }));
+vi.mock('./gamebar-residency.js', async original => ({ ...await original<typeof import('./gamebar-residency.js')>(), gameBarServiceEnabled: async () => false }));
+vi.mock('./desktop-settings.js', async original => ({ ...await original<typeof import('./desktop-settings.js')>(),
+  desktopConfigRoot: () => path.join(h.root, 'config'), inspectDesktopSettings: async () => ({ fullscreenExperience: false, fullscreenExperienceSource: 'none', canSetAutostart: false }),
+}));
+vi.mock('./voice-capture.js', () => ({ voiceDocumentAllowed: () => false, VoiceCapturePermissions: class { install() {} release() {} request() {} } }));
+vi.mock('./desktop-guide.js', () => ({ DesktopGuide: class { webContents = undefined;
+  constructor(_root: string, _release: unknown, visible: (visible: boolean) => void) { h.guideVisibility = visible; }
+  hide() {} destroy() {}
+} }));
+vi.mock('./cloud-gaming.js', () => ({ CloudGaming: class {
+  state = { open: false, phase: 'closed' }; open() { h.streamEvents.push('cloud-open'); return this.state; }
+  destroy() { h.streamEvents.push('cloud-close'); } setObscured(value: boolean) { h.streamEvents.push(`cloud-obscured:${value}`); }
+} }));
+vi.mock('./remote-play.js', () => ({ RemotePlay: class {
+  state = { open: false, phase: 'closed' }; open() { h.streamEvents.push('remote-open'); return this.state; }
+  destroy() { h.streamEvents.push('remote-close'); } setObscured(value: boolean) { h.streamEvents.push(`remote-obscured:${value}`); }
+} }));
+vi.mock('./experience-client.js', () => ({ GnomeExperienceClient: class {
+  current = { available: false, active: false, owned: false }; switcherVisible = false; dispose() {} async focusGuide() { return false; } async request() { return this.current; }
+} }));
 vi.mock('./launcher-update.js', () => ({ LauncherUpdater: class { state = {}; async initialize() {} async check() {} cancel() {} } }));
 vi.mock('./launcher-fonts.js', () => ({ adoptLauncherFonts: () => undefined, externalFontEnvironment: (env: unknown) => env }));
 // Deletion is restricted to disposable fixture directories, never real games.
@@ -92,7 +123,7 @@ beforeAll(async () => {
   h.wine = path.join(h.root, 'runtime', 'wine'); await fs.mkdir(path.dirname(h.wine)); await fs.writeFile(h.wine, 'fixture', { mode: 0o700 });
   const data = demoSnapshot(); h.backend = { ...data.backend, capabilities: { ...data.backend.capabilities, packageSelection: true }, binaryPath: path.join(h.root, 'synthetic-cli'), linuxRunPatch: 'test-patch' }; h.runtime = data.runtime;
   const store = new StateStore(path.join(h.root, 'userData'));
-  await store.setSettings({ firstRunCompleted: true, market: 'US', runtimeRoot: path.join(h.root, 'runtime'), winePath: h.wine });
+  await store.setSettings({ downloadNotifications: true, firstRunCompleted: true, market: 'US', runtimeRoot: path.join(h.root, 'runtime'), winePath: h.wine });
   const gamePath = path.join(h.root, 'installed-game'); await fs.mkdir(gamePath);
   await fs.writeFile(path.join(gamePath, 'MicrosoftGame.config'), '<Game><ShellVisuals DefaultDisplayName="Sample game"/><ExecutableList><Executable Name="Game.exe"/></ExecutableList><StoreId>9ZZZZZZZZZZZ</StoreId></Game>');
   await fs.writeFile(path.join(gamePath, 'Game.exe'), 'MZ fixture');
@@ -115,6 +146,39 @@ afterAll(async () => {
   h.game?.finish(); for (const job of h.downloads) job.finish(130);
   await new Promise(resolve => setTimeout(resolve, 50));
   await fs.rm(h.root, { recursive: true, force: true });
+});
+
+it('publishes cached profile fields only for the exact current account', async () => {
+  const account = await ipc('account-refresh');
+  expect(account.username).toBe('sample@example.test');
+  h.profile = { gamertag: 'SyntheticProfile', gamerscore: 123, subscription: { tier: 'ultimate' } };
+  h.profileSelected = 'different@example.test';
+  expect(snapshot().auth.profile).toBeUndefined(); expect(snapshot().auth.gamertag).toBeUndefined();
+  expect(snapshot().auth.subscription).toBeUndefined(); expect(snapshot().auth.profileSource).toBeUndefined();
+  h.profileSelected = account.username;
+  expect(snapshot().auth.profile).toEqual(h.profile); expect(snapshot().auth.profileSource).toBe('cache');
+  h.profile = undefined;
+});
+
+it('keeps streams exclusive, obscures both beneath the Guide, and rejects foreign frames', async () => {
+  const event = { sender: h.window.webContents, senderFrame: h.window.webContents.mainFrame };
+  const invoke = (name: string, ...args: unknown[]) => h.handlers.get(name)!(event, ...args);
+  h.streamEvents = [];
+  await invoke('cloud-gaming-open');
+  expect(h.streamEvents.slice(0, 2)).toEqual(['remote-close', 'cloud-open']);
+  await invoke('remote-play-open');
+  expect(h.streamEvents).toContain('cloud-close'); expect(h.streamEvents).toContain('remote-open');
+  h.streamEvents = [];
+  h.guideVisibility!(true);
+  expect(h.streamEvents).toEqual(['remote-obscured:true', 'cloud-obscured:true']);
+  await invoke('remote-play-obscured', true);
+  h.guideVisibility!(false);
+  expect(h.streamEvents.slice(-2)).toEqual(['remote-obscured:true', 'cloud-obscured:false']);
+  await invoke('remote-play-obscured', false);
+  for (const name of ['cloud-gaming-open', 'remote-play-open', 'guide-capture', 'xbox-profile-refresh', 'xbox-social-friends', 'battery-status']) {
+    const subframe = { ...event, senderFrame: {} };
+    await expect(Promise.resolve().then(() => h.handlers.get(name)!(subframe))).rejects.toThrow('Invalid launcher window');
+  }
 });
 
 it('real account-refresh IPC shares status reads and cannot publish a late old backend response', async () => {

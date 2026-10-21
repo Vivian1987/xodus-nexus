@@ -8,6 +8,51 @@ import path from 'node:path';
 import os from 'node:os';
 import { backendSourceArchiveArgs } from '../backend-source-archive.mjs';
 
+test('social uses the selected backend with read-only credentials and preserves upstream wallet fixes', async () => {
+  const lock = JSON.parse(await fs.readFile('assets/backend-source.lock.json', 'utf8'));
+  const socialIndex = lock.patches.findIndex(patch => patch.file === 'xodus-social.patch');
+  assert.equal(socialIndex, lock.patches.length - 1);
+  for (const preserved of ['xodus-profile-details.patch', 'xodus-keyring-create.patch', 'xodus-keyring-unlock.patch',
+    'xodus-keyring-session-stop.patch', 'xodus-keyring-persistence.patch', 'xodus-encrypted-resume.patch', 'xodus-launch-image-errors.patch']) {
+    const index = lock.patches.findIndex(patch => patch.file === preserved);
+    assert.ok(index >= 0 && index < socialIndex, preserved);
+  }
+  const patch = await fs.readFile('assets/xodus-social.patch', 'utf8');
+  const paths = [...patch.matchAll(/^diff --git a\/(\S+) b\/\1$/gm)].map(match => match[1]);
+  assert.deepEqual(paths, ['crates/xodus-cli/src/main.rs', 'crates/xodus-cli/src/commands.rs',
+    'crates/xodus-cli/src/commands/profile.rs', 'crates/xodus-cli/src/commands/social.rs']);
+  for (const text of ['readonly_manager()', 'impl xodus::tokens::store::TokenBackend for ReadOnlyBackend',
+    'tracing_subscriber::EnvFilter::new("off")', '.retry(reqwest::retry::never())',
+    'social_readonly_current_session_never_mutates_or_migrates_credentials',
+    'social_readonly_expiry_fails_before_exchange_without_renewal_or_writes',
+    'social_send_timeout_is_unconfirmed_and_never_retried',
+    'social_inbox_omits_system_and_group_conversations_without_hiding_valid_threads',
+    'social_peer_ids_are_positive_bounded_decimal_only', '"partyVoice":false']) assert.ok(patch.includes(text), text);
+  assert.doesNotMatch(patch, /^-.*(?:KeyringUnlock|KeyringCreate|KeyringSessionStop|unlock_default|create_default|stop_session_provider)/m);
+  assert.doesNotMatch(patch, /xboks|slaveitgr|social-backend/);
+  const service = await fs.readFile('src/main/xbox-social.ts', 'utf8');
+  assert.match(service, /spawnTracked\(binary, \['social', operation/);
+  assert.match(service, /tracked\.child\.stdin\.end\(body \? JSON\.stringify\(body\) : undefined\)/);
+  assert.doesNotMatch(service, /socialBackend\(|social-backend|xboks|slaveitgr/);
+  const build = await fs.readFile('scripts/build-backend.mjs', 'utf8');
+  assert.match(build, /for \(const name of \[[^\]]*'social'[^\]]*\]\)/);
+});
+
+test('optional self-profile fields follow upstream wallet fixes without changing authentication or membership', async () => {
+  const lock = JSON.parse(await fs.readFile('assets/backend-source.lock.json', 'utf8'));
+  const detailsIndex = lock.patches.findIndex(patch => patch.file === 'xodus-profile-details.patch');
+  const walletIndex = lock.patches.findIndex(patch => patch.file === 'xodus-keyring-create.patch');
+  assert.ok(walletIndex >= 0 && detailsIndex > walletIndex);
+  const patch = await fs.readFile('assets/xodus-profile-details.patch', 'utf8');
+  assert.equal((patch.match(/^diff --git /gm) ?? []).length, 1);
+  assert.match(patch, /^diff --git a\/crates\/xodus-cli\/src\/commands\/profile\.rs b\/crates\/xodus-cli\/src\/commands\/profile\.rs$/m);
+  for (const text of ['profile_details_only_exposes_bounded_provider_fields_including_actual_zero_score',
+    'profile_details_missing_or_malformed_optional_data_never_invents_values', 'optional_profile_text',
+    'Gamerscore,Bio,Location', 'text.parse::<u32>()', 'settings.len() <= 64']) assert.ok(patch.includes(text), text);
+  assert.doesNotMatch(patch, /^\+.*(?:tokens\.(?:get_|set_|save_|remove_)|request_xsts_token|exchange_user_token|\.delete_credential\()/m);
+  assert.doesNotMatch(patch, /^\+.*result\["subscription"\]\s*=/m);
+});
+
 test('auth response consistency and coherent credential persistence are pinned and account-free tested', async () => {
   const lock = JSON.parse(await fs.readFile('assets/backend-source.lock.json', 'utf8'));
   assert.ok(lock.patches.some(p => p.file === 'xodus-auth-consistency.patch'));

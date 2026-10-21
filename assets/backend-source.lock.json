@@ -5,7 +5,7 @@
   "commit": "53ea781dcd073e31d7ea68e894134e9c959bff04",
   "rust": "1.99.0",
   "cargoLockSha256": "2259b343e00dadc263018beb7664b12e9d58a0b73bff502ad566f5f8619ce28a",
-  "patchId": "linux-run-v38",
+  "patchId": "linux-run-v40",
   "compatibility": "linux-run-v22",
   "patches": [
     { "file": "xodus-linux-run.patch", "sha256": "68f260ec2c6e9264c47ed1a650868511f5412a756725d4000a865804f4712e8b" },
@@ -45,6 +45,8 @@
     { "file": "xodus-keyring-unlock.patch", "sha256": "7762a87353d4c1a25133c8c541678cec7e233a6f67589e3d16f66b4738975baa" },
     { "file": "xodus-keyring-session-stop.patch", "sha256": "864e9e427f6298afa012cbbf7586b627e788bcbdc75cabf493274947dce0e8cd" },
     { "file": "xodus-keyring-persistence.patch", "sha256": "78782b557ec3f5457b6e697bb9262ad2403497691d8f23814b42fdd9300b7b46" },
-    { "file": "xodus-keyring-create.patch", "sha256": "c79a46f387f7de54e3d3004d646f9e9b141c4d498eebd69a47144450b15442e6" }
+    { "file": "xodus-keyring-create.patch", "sha256": "c79a46f387f7de54e3d3004d646f9e9b141c4d498eebd69a47144450b15442e6" },
+    { "file": "xodus-profile-details.patch", "sha256": "ea27bb132ff36a04e4fb8598ec46426a3bcd07580e93d24fbe3e1c8f39bea008" },
+    { "file": "xodus-social.patch", "sha256": "1469e37f8ae66e489bcfd6cabee1de6692beb427d3bc56d882edcc59800d3c94" }
   ]
 }

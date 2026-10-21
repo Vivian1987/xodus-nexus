@@ -1,0 +1,9 @@
+.collections-page, .gamepass-page { min-width: 0; }
+.collection-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }
+.collection-tabs button[aria-pressed="true"] { border-color: var(--green); background: var(--surface-hover); }
+.play-later-control { display: inline-flex; flex-direction: column; gap: 6px; }
+.play-later-control > small { color: #e4ae75; font-size: 11px; }
+.collection-card > .play-later-control { display: flex; margin: 6px 10px 0; }
+.collection-card .play-later-control button { min-height: 34px; font-size: 10px; justify-content: center; }
+.collection-card time { color: var(--muted); font-size: 10px; }
+.gamepass-page .catalog-card-main > div:last-child > span { color: var(--muted); font-size: 11px; }

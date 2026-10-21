@@ -1,0 +1,35 @@
+.nexus-os-switcher { background-color: #d5d5d5; background-gradient-direction: vertical; background-gradient-start: #ededed; background-gradient-end: #b6b6b6; color: #191919; font-family: sans-serif; }
+.nexus-app-bar { spacing: 0; }
+.nexus-switcher-button { color: #202020; border-radius: 8px; padding: 10px 18px; background-color: transparent; }
+.nexus-switcher-button:hover, .nexus-switcher-button:focus, .nexus-switcher-button.current { background-color: rgba(0,0,0,0.045); }
+.nexus-switcher-button.app { padding: 20px; border-radius: 4px; }
+.nexus-bumper { border: 1.5px solid #292929; border-radius: 5px 5px 3px 3px; font-size: 10px; font-weight: bold; text-align: center; }
+.nexus-window-card { background-color: #f3f3f3; border-radius: 8px; border: 0; }
+.nexus-window-card.selected { border: 4px solid #0078d4; border-radius: 17px; }
+.nexus-window-heading { spacing: 8px; font-size: 24px; padding: 0; }
+.nexus-window-heading.neighbor { spacing: 5px; font-size: 14px; }
+.nexus-window-card .close { font-size: 36px; font-weight: normal; padding: 0 8px; }
+.nexus-card-actions { font-size: 23px; padding: 20px 20px 0; background-gradient-direction: vertical; background-gradient-start: rgba(255,255,255,0); background-gradient-end: #ffffff; }
+.nexus-switcher-button.window-select { padding: 0; background-color: transparent; border-radius: 0; }
+.nexus-switcher-button.window-select:hover, .nexus-switcher-button.window-select:focus { background-color: rgba(0,120,212,0.025); }
+.nexus-mode-bar { background-color: rgba(255,255,255,0.45); border: 1px solid rgba(0,0,0,0.12); border-radius: 10px; spacing: 6px; padding: 3px; }
+.nexus-mode-content { spacing: 8px; }
+.nexus-mode-bar .nexus-switcher-button.mode { font-size: 13px; padding: 9px 12px; border-radius: 8px; }
+.nexus-mode-bar .nexus-switcher-button.active-mode { background-color: rgba(0,0,0,0.035); }
+.nexus-mode-underline { background-color: #0078d4; border-radius: 2px; }
+.nexus-switcher-clock { font-size: 27px; }
+
+/* The desktop preference changes colors only; actor geometry, native icons and
+   live previews stay intact while the switcher is open. */
+.nexus-os-switcher.nexus-theme-dark { background-color: #101112; background-gradient-direction: radial; background-gradient-start: #3a3d3e; background-gradient-end: #090a0b; color: #f7f7f7; }
+.nexus-theme-dark .nexus-switcher-button { color: #f7f7f7; }
+.nexus-theme-dark .nexus-switcher-button:hover, .nexus-theme-dark .nexus-switcher-button:focus, .nexus-theme-dark .nexus-switcher-button.current { background-color: rgba(255,255,255,0.08); }
+.nexus-theme-dark .nexus-bumper { color: #f7f7f7; border-color: #f7f7f7; }
+.nexus-theme-dark .nexus-window-card { background-color: #111213; }
+.nexus-theme-dark .nexus-window-card.selected { border-color: #8de8f5; }
+.nexus-theme-dark .nexus-card-actions { color: #ffffff; background-gradient-start: rgba(0,0,0,0); background-gradient-end: #050606; }
+.nexus-theme-dark .nexus-switcher-button.window-select { background-color: transparent; }
+.nexus-theme-dark .nexus-switcher-button.window-select:hover, .nexus-theme-dark .nexus-switcher-button.window-select:focus { background-color: rgba(141,232,245,0.025); }
+.nexus-theme-dark .nexus-mode-bar { background-color: rgba(38,39,40,0.82); border-color: rgba(255,255,255,0.14); }
+.nexus-theme-dark .nexus-mode-bar .nexus-switcher-button.active-mode { background-color: rgba(255,255,255,0.065); }
+.nexus-theme-dark .nexus-mode-underline { background-color: #8de8f5; }

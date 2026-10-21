@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { LauncherUpdate } from '../shared/types.js';
 import { isNewerVersion } from '../shared/utils.js';
+import { fetchNexusRelease, releaseText } from './release-fetch.js';
 
 const REPO = 'domsvoboda/xodus-nexus';
 const API = `https://api.github.com/repos/${REPO}/releases?per_page=100`;
@@ -14,13 +15,17 @@ function assetUrl(url: string, tag: string, name: string): boolean {
   return url === `https://github.com/${REPO}/releases/download/${tag}/${name}`;
 }
 export function launcherCandidate(releases: Release[], current: string): LauncherCandidate | undefined {
-  const stable = releases.filter(r => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name));
+  if (!Array.isArray(releases) || releases.length > 1000) return;
+  const stable = releases.filter(r => r && typeof r === 'object' && !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name));
   stable.sort((a, b) => isNewerVersion(a.tag_name, b.tag_name) ? -1 : isNewerVersion(b.tag_name, a.tag_name) ? 1 : 0);
   for (const r of stable) {
     if (!isNewerVersion(r.tag_name, current)) continue;
     const name = `Xodus-Nexus-${r.tag_name.slice(1)}-x86_64.AppImage`;
-    const image = r.assets?.find(a => a.name === name);
-    const checksum = r.assets?.find(a => a.name === `${name}.sha512sum`);
+    if (!Array.isArray(r.assets) || r.assets.length > 1000) continue;
+    const images = r.assets.filter(a => a && typeof a === 'object' && a.name === name);
+    const checksums = r.assets.filter(a => a && typeof a === 'object' && a.name === `${name}.sha512sum`);
+    const image = images.length === 1 ? images[0] : undefined;
+    const checksum = checksums.length === 1 ? checksums[0] : undefined;
     if (!image || !checksum || !assetUrl(image.browser_download_url, r.tag_name, image.name) ||
         !assetUrl(checksum.browser_download_url, r.tag_name, checksum.name) ||
         !Number.isSafeInteger(image.size) || image.size < 64 || image.size > 1024 ** 3 ||
@@ -72,9 +77,9 @@ export class LauncherUpdater {
   private async performCheck(): Promise<void> {
     this.state.checking = true; this.state.error = undefined; this.changed();
     try {
-      const response = await this.fetcher(API, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
+      const response = await fetchNexusRelease(this.fetcher, API, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error(`GitHub update check returned HTTP ${response.status}.`);
-      const releases = await response.json() as Release[];
+      const releases = JSON.parse(await releaseText(response, 2_000_000)) as Release[];
       if (!Array.isArray(releases)) throw new Error('Invalid GitHub release list.');
       this.candidate = launcherCandidate(releases, this.version);
       this.state.latestVersion = this.candidate?.version;
@@ -109,12 +114,12 @@ export class LauncherUpdater {
     this.controller = new AbortController();
     this.state.updating = true; this.state.error = undefined; this.state.progress = 0; this.state.phase = 'Downloading launcher update…'; this.changed();
     try {
-      const checksumResponse = await this.fetcher(candidate.checksum.browser_download_url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(15_000)]) });
+      const checksumResponse = await fetchNexusRelease(this.fetcher, candidate.checksum.browser_download_url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(15_000)]) });
       if (!checksumResponse.ok || candidate.checksum.size > 4096) throw new Error('Could not download the launcher checksum.');
-      const checksum = (await checksumResponse.text()).trim();
+      const checksum = (await releaseText(checksumResponse, 4096)).trim();
       const match = checksum.match(/^([a-f0-9]{128})  ([A-Za-z0-9._-]+)$/i);
       if (!match || match[2] !== candidate.image.name) throw new Error('Invalid launcher checksum file.');
-      const response = await this.fetcher(candidate.image.browser_download_url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(600_000)]) });
+      const response = await fetchNexusRelease(this.fetcher, candidate.image.browser_download_url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(600_000)]) });
       if (!response.ok || !response.body) throw new Error('Could not download the launcher AppImage.');
       const handle = await fs.open(temporary, 'wx', 0o700);
       const hash = createHash('sha512'); let bytes = 0; let header = Buffer.alloc(0);

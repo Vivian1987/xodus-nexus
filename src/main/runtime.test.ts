@@ -6,6 +6,13 @@ import path from 'node:path';
 import { canonicalSnapshotName, nexusReleaseName, previewBaseRelease, RuntimeManager } from './runtime.js';
 import { run } from './process.js';
 
+function runtimeRelease(version: string, published_at?: string) {
+  const tag_name = `runtime-${version}`, base = `xodus-nexus-runtime-${version}`;
+  return { tag_name, published_at, assets: ['-x86_64.tar.xz', '-x86_64.sha512sum', '-source.tar.xz', '-source.sha512sum'].map(suffix => ({
+    name: `${base}${suffix}`, browser_download_url: `https://github.com/domsvoboda/xodus-nexus/releases/download/${tag_name}/${base}${suffix}`,
+  })) };
+}
+
 describe('previewBaseRelease', () => {
   it('derives release names from versions, commits and asset names', () => {
     expect(nexusReleaseName('xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.tar.xz')).toBe('xodus-nexus-runtime-11.0-20261011-g3fd4ae10');
@@ -20,13 +27,7 @@ describe('previewBaseRelease', () => {
         tag_name: 'v0.5.25',
         assets: [{ name: 'Xodus-Nexus-0.5.25-x86_64.AppImage', browser_download_url: 'https://example.com/app.AppImage' }],
       },
-      {
-        tag_name: 'runtime-11.0-20261011-g3fd4ae10',
-        assets: [
-          { name: 'xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.tar.xz', browser_download_url: 'https://example.com/xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.tar.xz' },
-          { name: 'xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.sha512sum', browser_download_url: 'https://example.com/xodus-nexus-runtime-11.0-20261011-g3fd4ae10-x86_64.sha512sum' },
-        ],
-      },
+      runtimeRelease('11.0-20261011-g3fd4ae10'),
     ]), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
     const manager = new RuntimeManager('/tmp/unused', () => undefined, () => false, fetcher);
     const status = await manager.checkNexus();
@@ -36,15 +37,7 @@ describe('previewBaseRelease', () => {
   });
 
   it.each([false, true])('selects the newest publication regardless of list or commit-hash order: reversed=%s', async reversed => {
-    const runtime = (suffix: string, published_at: string) => {
-      const name = `xodus-nexus-runtime-11.0-20261014-${suffix}-x86_64.tar.xz`;
-      return {
-        tag_name: `runtime-11.0-20261014-${suffix}`, published_at,
-        assets: [name, name.replace('.tar.xz', '.sha512sum')].map(name => ({
-          name, browser_download_url: `https://example.com/${name}`,
-        })),
-      };
-    };
+    const runtime = (suffix: string, published_at: string) => runtimeRelease(`11.0-20261014-${suffix}`, published_at);
     const older = runtime('g9e1653e1', '2026-10-14T12:18:00Z');
     const newer = runtime('g606bbea0', '2026-10-14T22:13:42Z');
     const releases = [
@@ -76,18 +69,17 @@ describe('previewBaseRelease', () => {
   });
 
   it('ignores previews, unrelated archives and mismatched checksum pairs', async () => {
-    const name = 'xodus-nexus-runtime-11.0-tested-x86_64.tar.xz';
-    const asset = (file: string) => ({ name: file, browser_download_url: `https://example.com/${file}` });
-    const pair = [asset(name), asset(name.replace('.tar.xz', '.sha512sum'))];
+    const tested = runtimeRelease('11.0-tested');
+    const pair = tested.assets;
     const fetcher = (async () => new Response(JSON.stringify([
       { tag_name: 'draft', draft: true, assets: pair },
       { tag_name: 'preview', prerelease: true, assets: pair },
-      { tag_name: 'unrelated', assets: [asset('other-x86_64.tar.xz'), asset('other-x86_64.sha512sum')] },
-      { tag_name: 'mismatched', assets: [asset(name), asset('xodus-nexus-runtime-different-x86_64.sha512sum')] },
-      { tag_name: 'runtime-tested', assets: pair },
+      { tag_name: 'unrelated', assets: pair },
+      { ...runtimeRelease('mismatched'), assets: pair },
+      tested,
     ]))) as typeof fetch;
     const manager = new RuntimeManager('/tmp/unused', () => undefined, () => false, fetcher);
-    expect((await manager.checkNexus()).nexusVersion).toBe('runtime-tested');
+    expect((await manager.checkNexus()).nexusVersion).toBe('runtime-11.0-tested');
   });
 
   it('does not download or replace a runtime during an active operation', async () => {
@@ -96,7 +88,7 @@ describe('previewBaseRelease', () => {
     await expect(manager.installNexus(() => undefined)).rejects.toThrow('while a Xodus operation is active');
   });
 
-  it.each(['valid', 'stderr-warning', 'bad-digest', 'wrong-file', 'unsafe-root', 'mixed-root'])('verifies a downloaded Nexus runtime before activation: %s', async scenario => {
+  it.each(['valid', 'stderr-warning', 'bad-digest', 'wrong-file', 'unsafe-root', 'mixed-root', 'oversized-archive', 'oversized-checksum'])('verifies a downloaded Nexus runtime before activation: %s', async scenario => {
     // Build a real tar.xz runtime archive with a fake wine binary, publish it
     // through the mocked release API, and run the full install path:
     // download, SHA-512 verification, extraction, canonical naming, pointer.
@@ -115,11 +107,10 @@ describe('previewBaseRelease', () => {
     const fetcher = (async (input: URL | RequestInfo) => {
       const url = String(input);
       if (url.includes('/releases?')) {
-        return new Response(JSON.stringify([{ tag_name: 'runtime-11.0-20261011-g3fd4ae10', assets: [
-          { name: `${releaseName}-x86_64.tar.xz`, browser_download_url: `https://example.com/${releaseName}-x86_64.tar.xz` },
-          { name: `${releaseName}-x86_64.sha512sum`, browser_download_url: `https://example.com/${releaseName}-x86_64.sha512sum` },
-        ] }]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify([runtimeRelease('11.0-20261011-g3fd4ae10')]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      if (scenario === 'oversized-archive' && url.endsWith('.tar.xz')) return new Response('too large', { headers: { 'content-length': String(4 * 1024 ** 3 + 1) } });
+      if (scenario === 'oversized-checksum' && url.endsWith('.sha512sum')) return new Response(' '.repeat(4097));
       const file = path.join(build, url.split('/').pop()!);
       return new Response(await fs.readFile(file), { status: 200 });
     }) as typeof fetch;
@@ -134,7 +125,7 @@ describe('previewBaseRelease', () => {
       await fs.writeFile(path.join(root, 'current.json'), JSON.stringify(previous));
       await manager.refresh(); // detect tar and sha512sum prerequisites
       if (!['valid', 'stderr-warning'].includes(scenario)) {
-        await expect(manager.installNexus(() => undefined)).rejects.toThrow(['unsafe-root', 'mixed-root'].includes(scenario) ? /runtime structure/ : /SHA-512/);
+        await expect(manager.installNexus(() => undefined)).rejects.toThrow(['unsafe-root', 'mixed-root'].includes(scenario) ? /runtime structure/ : scenario.startsWith('oversized-') ? /size limit/ : /SHA-512/);
         expect(JSON.parse(await fs.readFile(path.join(root, 'current.json'), 'utf8'))).toEqual(previous);
         expect(manager.current.name).toBe('previous');
         expect(manager.current.updating).toBe(false);

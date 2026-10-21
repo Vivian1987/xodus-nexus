@@ -1,15 +1,14 @@
-import { constants, createWriteStream, promises as fs } from 'node:fs';
+import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import type { RuntimeStatus } from '../shared/types.js';
 import { run } from './process.js';
+import { fetchNexusRelease, releaseText } from './release-fetch.js';
+import { runtimeAssetUrl, runtimeCandidate, runtimeReleasesUrl, type NexusRuntimeArtifact } from './runtime-package.js';
 
 const REPOSITORY = 'xodus-gaming/Proton';
 const BRANCH = 'xodus/bleeding-edge';
 const REPOSITORY_URL = 'https://github.com/xodus-gaming/Proton.git';
-const NEXUS_REPOSITORY = 'domsvoboda/xodus-nexus';
 
 interface RuntimePointer {
   name: string;
@@ -24,14 +23,6 @@ interface ArtifactInfo {
   name: string;
   checksumName: string;
   expiresAt: string;
-}
-
-interface NexusArtifact {
-  version: string;
-  name: string;
-  url: string;
-  checksumName: string;
-  checksumUrl: string;
 }
 
 // Release directories carry simple, user-facing version names; patch
@@ -56,7 +47,7 @@ export class RuntimeManager {
   private emitLog: (scope: string, line: string) => void;
   private isOperationActive: () => boolean;
   private latestArtifact?: ArtifactInfo;
-  private nexusArtifact?: NexusArtifact;
+  private nexusArtifact?: NexusRuntimeArtifact;
   private readonly fetcher: typeof fetch;
 
   constructor(runtimeRoot: string, emitLog: (scope: string, line: string) => void, isOperationActive: () => boolean, fetcher: typeof fetch = fetch) {
@@ -279,45 +270,13 @@ export class RuntimeManager {
     this.status.nexusChecking = true;
     this.status.nexusError = undefined;
     try {
-      const response = await this.fetcher(`https://api.github.com/repos/${NEXUS_REPOSITORY}/releases?per_page=30`, {
+      const response = await fetchNexusRelease(this.fetcher, runtimeReleasesUrl, {
         headers: { Accept: 'application/vnd.github+json' },
         signal: AbortSignal.timeout(20_000),
       });
       if (!response.ok) throw new Error('The Xodus Nexus release list could not be read.');
-      const releases = await response.json() as Array<{ tag_name?: unknown; published_at?: unknown; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: unknown; browser_download_url?: unknown }> }>;
-      let found: { version: string; archive: { name: string; url: string }; checksum: { name: string; url: string } } | undefined;
-      let newestPublication = -Infinity;
-      for (const release of releases) {
-        if (release.draft || release.prerelease) continue;
-        const version = typeof release.tag_name === 'string' && release.tag_name.trim() ? release.tag_name.trim() : '';
-        const assets = (release.assets ?? []).map((asset) => ({
-          name: typeof asset.name === 'string' ? asset.name : '',
-          url: typeof asset.browser_download_url === 'string' ? asset.browser_download_url : '',
-        }));
-        const archive = assets.find((asset) => /^xodus-nexus-runtime-[A-Za-z0-9._-]+-x86_64\.tar\.xz$/.test(asset.name) &&
-          /^https:\/\//.test(asset.url) && assets.some((sum) => sum.name === asset.name.replace(/\.tar\.xz$/, '.sha512sum') && /^https:\/\//.test(sum.url)));
-        const checksum = archive && assets.find((asset) => asset.name === archive.name.replace(/\.tar\.xz$/, '.sha512sum'));
-        if (archive && checksum) {
-          // GitHub's list order is not necessarily publication order, and the
-          // commit suffix in runtime tags is not a sortable version number.
-          const parsed = typeof release.published_at === 'string' ? Date.parse(release.published_at) : NaN;
-          const publication = Number.isFinite(parsed) ? parsed : -Infinity;
-          // Keep an undated fallback only when no dated candidate is available.
-          if (!found || publication > newestPublication) {
-            found = { version, archive, checksum };
-            newestPublication = publication;
-          }
-        }
-      }
-      if (!found) throw new Error('No Nexus runtime release has been published yet.');
-      this.nexusArtifact = {
-        version: found.version,
-        name: found.archive.name,
-        url: found.archive.url,
-        checksumName: found.checksum.name,
-        checksumUrl: found.checksum.url,
-      };
-      Object.assign(this.status, { nexusAvailable: true, nexusName: found.archive.name, nexusVersion: found.version, nexusError: undefined });
+      this.nexusArtifact = runtimeCandidate(JSON.parse(await releaseText(response, 2_000_000)));
+      Object.assign(this.status, { nexusAvailable: true, nexusName: this.nexusArtifact.name, nexusVersion: this.nexusArtifact.version, nexusError: undefined });
     } catch (error) {
       this.nexusArtifact = undefined;
       Object.assign(this.status, { nexusAvailable: false, nexusName: undefined, nexusVersion: undefined, nexusError: (error as Error).message });
@@ -327,10 +286,24 @@ export class RuntimeManager {
     return this.current;
   }
 
-  private async downloadFile(url: string, target: string): Promise<void> {
-    const response = await this.fetcher(url, { signal: AbortSignal.timeout(600_000) });
+  private async downloadFile(url: string, target: string, limit: number): Promise<void> {
+    const response = await fetchNexusRelease(this.fetcher, url, { signal: AbortSignal.timeout(600_000) });
     if (!response.ok || !response.body) throw new Error(`Download failed with HTTP ${response.status}.`);
-    await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), createWriteStream(target));
+    const reader = response.body.getReader();
+    let file: Awaited<ReturnType<typeof fs.open>> | undefined;
+    try {
+      const declared = response.headers.get('content-length');
+      if (declared && /^\d+$/.test(declared) && Number(declared) > limit) throw new Error('Runtime download exceeds the size limit.');
+      file = await fs.open(target, 'wx', 0o600);
+      let size = 0;
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > limit) throw new Error('Runtime download exceeds the size limit.');
+        await file.writeFile(chunk.value);
+      }
+    } finally { await file?.close(); await reader.cancel().catch(() => {}); reader.releaseLock(); }
   }
 
   async installNexus(onStatus: () => void): Promise<string> {
@@ -339,6 +312,10 @@ export class RuntimeManager {
     const artifact = this.nexusArtifact;
     if (!artifact) throw new Error(this.status.nexusError ?? 'No Nexus runtime is available.');
     if (!this.status.prerequisites.tar || !this.status.prerequisites.sha512sum) throw new Error('tar or sha512sum is missing.');
+    const base = `xodus-nexus-runtime-${artifact.version.slice('runtime-'.length)}`;
+    if (artifact.name !== `${base}-x86_64.tar.xz` || artifact.checksumName !== `${base}-x86_64.sha512sum`) throw new Error('The runtime tag does not match its archive.');
+    const archiveUrl = runtimeAssetUrl(artifact.version, artifact.name, artifact.url);
+    const checksumUrl = runtimeAssetUrl(artifact.version, artifact.checksumName, artifact.checksumUrl);
 
     this.status.updating = true;
     this.status.error = undefined;
@@ -348,9 +325,9 @@ export class RuntimeManager {
     try {
       await fs.mkdir(downloads, { recursive: true });
       this.setPhase(`Downloading the Nexus runtime ${artifact.version}…`, onStatus);
-      await this.downloadFile(artifact.url, path.join(downloads, artifact.name));
+      await this.downloadFile(archiveUrl, path.join(downloads, artifact.name), 4 * 1024 ** 3);
       this.setPhase('Verifying the SHA-512 checksum…', onStatus);
-      await this.downloadFile(artifact.checksumUrl, path.join(downloads, artifact.checksumName));
+      await this.downloadFile(checksumUrl, path.join(downloads, artifact.checksumName), 4096);
       const checksum = (await fs.readFile(path.join(downloads, artifact.checksumName), 'utf8')).trim().match(/^([a-f0-9]{128})[ \t]+\*?([^\r\n]+)$/i);
       if (!checksum || checksum[2] !== artifact.name) throw new Error('The SHA-512 file does not identify this Nexus runtime archive.');
       const result = await run('sha512sum', ['-c', artifact.checksumName], { cwd: downloads, maxOutput: 100_000 });

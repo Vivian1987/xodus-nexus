@@ -2,6 +2,7 @@ import { constants, promises as fs } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { run } from './process.js';
+import { fetchNexusRelease, releaseBytes } from './release-fetch.js';
 import {
   BACKEND_REPOSITORY, backendPackageName, backendAssetUrl, compareVersions, minimumBackendVersion,
   validateBackendManifest, validateBackendArchive, type BackendPackageManifest,
@@ -10,21 +11,9 @@ import {
 export interface BackendArtifact { tag: string; manifest: BackendPackageManifest; archiveUrl: string }
 
 async function bytes(url: string, fetcher: typeof fetch, limit: number): Promise<Buffer> {
-  const response = await fetcher(url, { signal: AbortSignal.timeout(60_000) });
+  const response = await fetchNexusRelease(fetcher, url, { signal: AbortSignal.timeout(60_000) });
   if (!response.ok || !response.body) throw new Error(`Backend download failed (HTTP ${response.status}).`);
-  const parts: Uint8Array[] = [];
-  const reader = response.body.getReader();
-  let size = 0;
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.length;
-      if (size > limit) throw new Error('Backend metadata exceeds the download limit.');
-      parts.push(chunk.value);
-    }
-  } finally { await reader.cancel(); }
-  return Buffer.concat(parts);
+  return releaseBytes(response, limit);
 }
 
 export async function discoverBackend(fetcher: typeof fetch): Promise<BackendArtifact> {
@@ -32,10 +21,11 @@ export async function discoverBackend(fetcher: typeof fetch): Promise<BackendArt
     tag_name?: string; draft?: boolean; prerelease?: boolean;
     assets?: Array<{ name?: string; browser_download_url?: string }>;
   }>;
-  if (!Array.isArray(releases)) throw new Error('Invalid backend release list.');
+  if (!Array.isArray(releases) || releases.length > 1000) throw new Error('Invalid backend release list.');
   // The Electron-hosted backend requires the updated launcher.
   let selected: { tag: string; version: string; release: NonNullable<typeof releases[number]> } | undefined;
   for (const item of releases) {
+    if (!item || typeof item !== 'object') continue;
     if (item.draft || item.prerelease) continue;
     const match = /^backend-v(\d+\.\d+\.\d+)$/.exec(item.tag_name ?? '');
     if (!match || compareVersions(match[1], minimumBackendVersion) < 0) continue;
@@ -44,7 +34,12 @@ export async function discoverBackend(fetcher: typeof fetch): Promise<BackendArt
   if (!selected) throw new Error('No compatible Nexus backend release has been published yet.');
   const tag = selected.tag;
   const packageName = backendPackageName(selected.version);
-  const asset = (name: string) => backendAssetUrl(tag, name, selected!.release.assets?.find(item => item.name === name)?.browser_download_url);
+  const asset = (name: string) => {
+    const assets = selected!.release.assets;
+    const matches = Array.isArray(assets) && assets.length <= 1000 ? assets.filter(item => item && typeof item === 'object' && item.name === name) : [];
+    if (matches.length !== 1) throw new Error('The newest Nexus backend release is incomplete or ambiguous.');
+    return backendAssetUrl(tag, name, matches[0].browser_download_url);
+  };
   const archive = `${packageName}.tar.xz`;
   const manifest = validateBackendManifest(JSON.parse((await bytes(asset(`${packageName}.manifest.json`), fetcher, 100_000)).toString()));
   if (manifest.version !== selected.version) throw new Error('The backend release does not match its manifest.');
@@ -64,12 +59,14 @@ export async function installBackend(
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('The prebuilt backend currently supports x86_64 Linux only.');
   await assertIdle();
   const manifest = validateBackendManifest(artifact.manifest);
+  if (artifact.tag !== `backend-v${manifest.version}`) throw new Error('The backend tag does not match its manifest.');
+  const archiveUrl = backendAssetUrl(artifact.tag, manifest.archive, artifact.archiveUrl);
   const staging = path.join(managedRoot, `.download-${randomUUID()}`);
   await fs.mkdir(staging, { recursive: true });
   try {
     phase('Downloading the Nexus backend…');
     const archive = path.join(staging, manifest.archive);
-    const response = await fetcher(artifact.archiveUrl, { signal: AbortSignal.timeout(300_000) });
+    const response = await fetchNexusRelease(fetcher, archiveUrl, { signal: AbortSignal.timeout(300_000) });
     if (!response.ok || !response.body) throw new Error(`Backend download failed (HTTP ${response.status}).`);
     const reader = response.body.getReader();
     const file = await fs.open(archive, 'wx');

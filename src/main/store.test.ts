@@ -1,11 +1,93 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { promises as fileSystem } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { inspectGameDirectory, StateStore } from './store.js';
-import type { DownloadTask } from '../shared/types.js';
+import type { DownloadTask, Settings } from '../shared/types.js';
 
 const created: string[] = [];
+const desktopOptIns = ['downloadNotifications', 'createDesktopShortcut', 'launchOnLogin', 'launchInBackground', 'minimizeToTray'] as const;
+
+describe('desktop opt-in preferences', () => {
+  it('keeps every desktop integration off for new and older profiles without rewriting saved bytes', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'nexus-desktop-defaults-')); created.push(directory);
+    const store = new StateStore(directory); await store.load();
+    expect(Object.fromEntries(desktopOptIns.map(key => [key, store.settings[key]]))).toEqual(Object.fromEntries(desktopOptIns.map(key => [key, false])));
+    expect(store.settings.downloadSpeedUnit).toBe('bytes');
+    const saved = JSON.stringify({ settings: { market: 'CZ', parallelDownloads: 7 } });
+    await writeFile(path.join(directory, 'launcher-state.json'), saved);
+    const older = new StateStore(directory); await older.load();
+    for (const key of desktopOptIns) expect(older.settings[key]).toBe(false);
+    expect(older.settings).toMatchObject({ market: 'CZ', parallelDownloads: 7, downloadSpeedUnit: 'bytes' });
+    expect(await readFile(path.join(directory, 'launcher-state.json'), 'utf8')).toBe(saved);
+  });
+  it('requires literal opt-in booleans and persists display units without changing the rate limit', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'nexus-desktop-preferences-')); created.push(directory);
+    await writeFile(path.join(directory, 'launcher-state.json'), JSON.stringify({ settings: {
+      downloadNotifications: 'true', createDesktopShortcut: 1, launchOnLogin: true,
+      launchInBackground: 'true', minimizeToTray: null, downloadSpeedUnit: 'megabytes', downloadLimitMiB: 0.5,
+    } }));
+    const store = new StateStore(directory); await store.load();
+    expect(store.settings).toMatchObject({ downloadNotifications: false, createDesktopShortcut: false, launchOnLogin: true, launchInBackground: false, minimizeToTray: false, downloadSpeedUnit: 'bytes', downloadLimitMiB: 0.5 });
+    const optIn = Object.fromEntries(desktopOptIns.map(key => [key, true]));
+    await store.setSettings({ ...optIn, downloadSpeedUnit: 'bits' });
+    const reopened = new StateStore(directory); await reopened.load();
+    expect(reopened.settings).toMatchObject({ ...optIn, downloadSpeedUnit: 'bits', downloadLimitMiB: 0.5 });
+    const saved = await readFile(path.join(directory, 'launcher-state.json'), 'utf8');
+    for (const key of desktopOptIns) await expect(reopened.setSettings({ [key]: 'true' } as unknown as Partial<Settings>)).rejects.toThrow(key);
+    for (const unit of ['MiB', 'MB/s', 'bytes ', null, 1]) await expect(reopened.setSettings({ downloadSpeedUnit: unit } as unknown as Partial<Settings>)).rejects.toThrow('display unit');
+    expect(await readFile(path.join(directory, 'launcher-state.json'), 'utf8')).toBe(saved);
+    expect(reopened.settings).toMatchObject({ ...optIn, downloadSpeedUnit: 'bits', downloadLimitMiB: 0.5 });
+    await reopened.setSettings({ downloadSpeedUnit: 'bytes' });
+    expect(reopened.settings.downloadLimitMiB).toBe(0.5);
+  });
+  it('rolls back an unsuccessful atomic write and accepts a later preference change', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'nexus-desktop-save-failure-')); created.push(directory);
+    const store = new StateStore(directory); await store.load(); await store.save();
+    const saved = await readFile(path.join(directory, 'launcher-state.json'), 'utf8');
+    await mkdir(path.join(directory, 'launcher-state.json.tmp'));
+    await expect(store.setSettings({ launchOnLogin: true, launchInBackground: true })).rejects.toThrow();
+    expect(store.settings).toMatchObject({ launchOnLogin: false, launchInBackground: false });
+    expect(await readFile(path.join(directory, 'launcher-state.json'), 'utf8')).toBe(saved);
+    await rm(path.join(directory, 'launcher-state.json.tmp'), { recursive: true });
+    await store.setSettings({ launchOnLogin: true });
+    const reopened = new StateStore(directory); await reopened.load();
+    expect(reopened.settings).toMatchObject({ launchOnLogin: true, launchInBackground: false });
+  });
+  it('serializes a rejected settings transaction before a queued independent preference update', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'nexus-desktop-settings-queue-')); created.push(directory);
+    const store = new StateStore(directory); await store.load(); await store.save();
+    const rename = vi.spyOn(fileSystem, 'rename').mockRejectedValueOnce(Error('synthetic preference rename failure'));
+    try {
+      const failed = store.setSettings({ launchOnLogin: true, downloadSpeedUnit: 'bits' });
+      const next = store.setSettings({ minimizeToTray: true });
+      await expect(failed).rejects.toThrow('synthetic preference rename failure'); await next;
+      expect(store.settings).toMatchObject({ launchOnLogin: false, downloadSpeedUnit: 'bytes', minimizeToTray: true });
+      const reopened = new StateStore(directory); await reopened.load();
+      expect(reopened.settings).toMatchObject({ launchOnLogin: false, downloadSpeedUnit: 'bytes', minimizeToTray: true });
+    } finally { rename.mockRestore(); }
+  });
+  it('does not leak failed opt-ins into a concurrently queued game save', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'nexus-desktop-game-queue-')); created.push(directory);
+    const store = new StateStore(directory); await store.load(); await store.save();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>(done => { entered = done; }), blocked = new Promise<void>(done => { release = done; });
+    const rename = vi.spyOn(fileSystem, 'rename').mockImplementationOnce(async () => { entered(); await blocked; throw Error('synthetic preference rename failure'); });
+    const game = { id: 'synthetic-game', title: 'Synthetic game', path: path.join(directory, 'synthetic-game'), installState: 'imported' as const, addedAt: '2026-10-21T00:00:00Z' };
+    try {
+      const failed = store.setSettings({ launchOnLogin: true, launchInBackground: true });
+      const rejected = expect(failed).rejects.toThrow('synthetic preference rename failure');
+      await started;
+      const independent = store.upsertGame(game);
+      release(); await rejected; await independent;
+      expect(store.settings).toMatchObject({ launchOnLogin: false, launchInBackground: false });
+      const reopened = new StateStore(directory); await reopened.load();
+      expect(reopened.games).toContainEqual(game);
+      expect(reopened.settings).toMatchObject({ launchOnLogin: false, launchInBackground: false });
+    } finally { release(); rename.mockRestore(); }
+  });
+});
 
 describe('download bandwidth settings', () => {
   it('defaults to unlimited and persists fractional MiB/s without changing parallelism', async () => {

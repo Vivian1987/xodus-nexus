@@ -117,3 +117,13 @@ it('offers DualSense compatibility per game, off by default and with feature lim
   expect(on).toContain('Does not change Xbox controller settings');
   expect(on).toContain('adaptive triggers may be unavailable');
 });
+
+it('offers GameMode per game without enabling it for default or older settings', () => {
+  const render=(gameMode?:boolean)=>renderToStaticMarkup(<GameLaunchToolFields value={{...defaultLaunchTools,gameMode}} change={()=>{}} />);
+  for(const html of [render(),render(false)]) {
+    expect(html).toContain('Enable GameMode for this game');expect(html).not.toContain('checked');
+    expect(html).toContain('Requests GameMode while this game runs');expect(html).toContain('if unavailable, the game starts normally');
+    expect(html).toContain('Off by default');expect(html).not.toContain('GameMode is active');
+  }
+  expect(render(true)).toMatch(/<input type="checkbox" checked=""\/><span>Enable GameMode for this game/);
+});

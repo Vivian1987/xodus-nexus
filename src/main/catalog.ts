@@ -1,4 +1,5 @@
 import type { CatalogProduct, CatalogSearchResult, GameStoreDetails } from '../shared/types.js';
+import { readHandheldCompatibility } from './handheld-compatibility.js';
 
 type Fetcher = typeof fetch;
 
@@ -296,7 +297,7 @@ export class CatalogService {
     const marketProperties = Array.isArray(product.MarketProperties) ? object(product.MarketProperties[0]) : undefined;
     const value: GameStoreDetails = { productId, title, description: (string(localized?.ProductDescription) ?? '').slice(0, 64_000),
       publisher: string(localized?.PublisherName)?.slice(0, 512), heroUrl: displayImage(images.filter(image => object(image)), HERO_PURPOSES), categories, screenshots,
-      releaseDate: string(marketProperties?.OriginalReleaseDate) };
+      releaseDate: string(marketProperties?.OriginalReleaseDate), handheldCompatibility: await readHandheldCompatibility(productId, market, this.fetcher) };
     if (this.gameCache.size >= 100) this.gameCache.delete(this.gameCache.keys().next().value!);
     this.gameCache.set(key, { until: Date.now() + CACHE_TTL_MS, value });
     return structuredClone(value);
