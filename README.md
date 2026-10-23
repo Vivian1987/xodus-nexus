@@ -52,7 +52,8 @@ Flatpak version available through Discover. Other browsers are not supported.
 - **My Library** combines owned, Game Pass and installed games, with Access, Play state and title filters.
 - Open a game for its description, categories, screenshot gallery and available Xbox achievements, time played and last activity. Xbox data depends on the account and game.
 - **Store** lets you browse and install supported PC games.
-- **Manage content** installs licensed add-ons and campaign packages.
+- Before installing a game, select licensed downloadable add-ons to queue after the base game. DLC discovery uses active account licenses and matching PC package families, including games that omit related-product metadata.
+- **Manage content** supports per-item selection and select-all for batch install, repair or removal. Only validated managed DLC files are removed; base-game files are retained. Downloads and the runtime still verify licenses.
 - **Install Queue** downloads games one at a time and lets you add more while downloading or playing another game. Pause and resume are supported, including manual resume after restarting the launcher.
 - Cancelling a new installation can keep or delete its partial files. Existing games, updates and DLC keep their files.
 - Right-click an installed game for settings, VC++ prerequisites, shortcuts or removal.

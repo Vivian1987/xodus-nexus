@@ -11,7 +11,7 @@ interface Manifest {
   storeId: string; name: string; publisher: string; version: string;
   related: string[]; allowed: string[]; dependency?: string;
 }
-export interface ContentPackage { productId: string; contentId: string; family: string; downloadBytes?: number }
+export interface ContentPackage { productId: string; contentId: string; family: string; mainFamily?: string; downloadBytes?: number }
 type Access = Record<string, 'owned' | 'gamepass'>;
 type RecordValue = Record<string, any>;
 
@@ -30,6 +30,32 @@ async function manifestFile(directory: string, filename: string): Promise<string
   const matches = (await fs.readdir(directory)).filter(name => name.toLowerCase() === filename.toLowerCase());
   if (matches.length !== 1) throw Error(`Missing or ambiguous ${filename}.`);
   return boundedFile(path.join(directory, matches[0]));
+}
+async function extractedConfig(directory: string, groups: XmlNode[], normalize: boolean): Promise<{ xml: string; nested: boolean }> {
+  const root = (await fs.readdir(directory)).filter(name => name.toLowerCase() === 'microsoftgame.config');
+  if (root.length || !normalize) return { xml: await manifestFile(directory, 'MicrosoftGame.config'), nested: false };
+  // MSIXVC extraction preserves DestinationPath. Some DLC put the config in
+  // SRC even though SourcePath describes the original packaging workspace.
+  // Only use a mapping explicitly declared by the package; never scan for it.
+  const candidates = new Set<string>();
+  for (const group of groups) {
+    if (group.attributes.SourcePath !== '.' || !['*', '*.*', 'microsoftgame.config'].includes(group.attributes.Include?.toLowerCase())) continue;
+    const destination = group.attributes.DestinationPath?.replace(/^[/\\]/, '');
+    if (!destination || /[:\x00-\x1f*?]/.test(destination)) continue;
+    const parts = destination.split(/[/\\]/).filter(Boolean);
+    if (parts.length > 16 || parts.some(part => part === '.' || part === '..')) continue;
+    let folder = directory;
+    for (const part of parts) {
+      const matches = (await fs.readdir(folder)).filter(name => name.toLowerCase() === part.toLowerCase());
+      if (matches.length !== 1) throw Error('Missing or ambiguous content payload directory.');
+      folder = path.join(folder, matches[0]);
+      const stat = await fs.lstat(folder);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('Invalid content payload directory.');
+    }
+    candidates.add(folder);
+  }
+  if (candidates.size !== 1) throw Error('Invalid package identity.');
+  return { xml: await manifestFile([...candidates][0], 'MicrosoftGame.config'), nested: true };
 }
 export function contentManifest(xml: string): Manifest {
   const root = parsePackageXml(xml);
@@ -64,6 +90,9 @@ function packages(product: RecordValue): RecordValue[] {
     .filter((pkg: RecordValue) => pkg && pkg.PackageFormat === 'MSIXVC' && Array.isArray(pkg.Architectures) && pkg.Architectures.includes('x64')
       && Array.isArray(pkg.PlatformDependencies) && pkg.PlatformDependencies.some((dep: RecordValue) => dep?.PlatformName === 'Windows.Desktop'));
 }
+function baseFamilies(base: Manifest, product?: RecordValue): Set<string> {
+  return new Set(product ? packages(product).map(pkg => pkg.PackageFamilyName).filter(name => typeof name === 'string' && name.startsWith(base.name + '_')) : []);
+}
 export function contentOffers(base: Manifest, catalog: unknown, access: Access): { items: GameContentItem[]; packages: ContentPackage[] } {
   const products = (catalog as RecordValue)?.Products;
   if (!Array.isArray(products) || products.length > 256) throw Error('Invalid content catalog.');
@@ -73,9 +102,14 @@ export function contentOffers(base: Manifest, catalog: unknown, access: Access):
     byId.set(product.ProductId, product);
   }
   const baseProduct = byId.get(base.storeId);
-  const families = new Set(baseProduct ? packages(baseProduct).map(pkg => pkg.PackageFamilyName).filter(name => typeof name === 'string' && name.startsWith(base.name + '_')) : []);
+  const families = baseFamilies(base, baseProduct);
   const selected: ContentPackage[] = [];
-  const items = base.related.filter(id => id !== base.storeId).map((id): GameContentItem => {
+  // RelatedProducts is optional and can describe other related games. A DLC's
+  // own package dependency establishes its base; active licenses only establish
+  // ownership. Both are required before offering an undeclared add-on.
+  const related = new Set([...base.related, ...products.filter((product: RecordValue) => access[product.ProductId]
+    && product.ProductType === 'Durable' && packages(product).some(pkg => families.has(pkg.MainPackageFamilyNameForDlc))).map((product: RecordValue) => product.ProductId)]);
+  const items = [...related].filter(id => id !== base.storeId).map((id): GameContentItem => {
     const product = byId.get(id);
     const title = product?.LocalizedProperties?.find((row: RecordValue) => typeof row?.ProductTitle === 'string')?.ProductTitle?.slice(0, 300) || id;
     const licensed = access[id];
@@ -86,7 +120,7 @@ export function contentOffers(base: Manifest, catalog: unknown, access: Access):
     if (unique.size !== 1 || new Set(candidates.map(pkg => pkg.PackageFamilyName)).size !== 1) return { productId: id, title, access: licensed, status: 'unsupported', note: 'No unambiguous related PC MSIXVC content package was verified.' };
     const pkg = [...unique.values()][0];
     const downloadBytes = Number.isSafeInteger(pkg.MaxDownloadSizeInBytes) && pkg.MaxDownloadSizeInBytes > 0 ? pkg.MaxDownloadSizeInBytes : undefined;
-    selected.push({ productId: id, contentId: pkg.ContentId.toLowerCase(), family: pkg.PackageFamilyName, downloadBytes });
+    selected.push({ productId: id, contentId: pkg.ContentId.toLowerCase(), family: pkg.PackageFamilyName, mainFamily: pkg.MainPackageFamilyNameForDlc, downloadBytes });
     return { productId: id, title, access: licensed, status: 'available', downloadBytes, note: 'Install-time licensing is checked again by Xodus.' };
   });
   return { items, packages: selected };
@@ -99,8 +133,8 @@ export class GameContent {
     const key = createHash('sha256').update(game.id + '\0' + path.resolve(game.path)).digest('hex').slice(0, 32);
     return path.join(this.dataRoot, 'content', key, id);
   }
-  private async safeDirectory(game: Game, id: string, create = false): Promise<string> {
-    const target = this.directory(game, id);
+  private async safeDirectory(game: Game, id?: string, create = false): Promise<string> {
+    const target = id ? this.directory(game, id) : path.dirname(this.directory(game, game.storeId!));
     // Managed content never writes into the base game. Reject symlink redirection
     // at every managed component, including persisted queue destinations.
     const relative = path.relative(this.dataRoot, target).split(path.sep);
@@ -114,16 +148,8 @@ export class GameContent {
     if (/[;\r\n]/.test(current)) throw Error('Content paths cannot contain semicolons or line breaks.');
     return current;
   }
-  private async validate(game: Game, id: string, directory: string, family?: string): Promise<Manifest> {
+  private async validate(game: Game, id: string, directory: string, family?: string, normalize = false): Promise<Manifest> {
     const base = await baseManifest(game);
-    if (!base.related.includes(id)) throw Error('Content is not declared by this game.');
-    const content = contentManifest(await manifestFile(directory, 'MicrosoftGame.config'));
-    const appx = parsePackageXml(await manifestFile(directory, 'appxmanifest.xml'));
-    const identity = single(appx, 'Identity').attributes;
-    const dependency = single(single(appx, 'Dependencies'), 'MainPackageDependency').attributes;
-    if (appx.name.split(':').at(-1) !== 'Package' || content.storeId !== id || content.publisher !== base.publisher || content.dependency !== base.name || !content.allowed.includes(base.storeId)
-      || identity.Name !== content.name || identity.Publisher !== content.publisher || identity.Version !== content.version
-      || dependency.Name !== base.name || (family && !family.startsWith(content.name + '_'))) throw Error('Downloaded content does not match the game/package identity.');
     const layouts = (await fs.readdir(directory)).filter(name => /^layout_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.xml$/i.test(name));
     if (layouts.length !== 1) throw Error('Missing or ambiguous content layout.');
     const layout = parsePackageXml(await boundedFile(path.join(directory, layouts[0])));
@@ -136,6 +162,14 @@ export class GameContent {
     }
     visit(layout, 0);
     if (!groups.length || groups.length > 256) throw Error('Content layout contains no supported file groups.');
+    const config = await extractedConfig(directory, groups, normalize);
+    const content = contentManifest(config.xml);
+    const appx = parsePackageXml(await manifestFile(directory, 'appxmanifest.xml'));
+    const identity = single(appx, 'Identity').attributes;
+    const dependency = single(single(appx, 'Dependencies'), 'MainPackageDependency').attributes;
+    if (appx.name.split(':').at(-1) !== 'Package' || content.storeId !== id || content.publisher !== base.publisher || content.dependency !== base.name || !content.allowed.includes(base.storeId)
+      || identity.Name !== content.name || identity.Publisher !== content.publisher || identity.Version !== content.version
+      || dependency.Name !== base.name || (family && !family.startsWith(content.name + '_'))) throw Error('Downloaded content does not match the game/package identity.');
     for (const group of groups) {
       const source = group.attributes.SourcePath, include = group.attributes.Include;
       const valid = (value: string | undefined) => value && !/^[/\\]/.test(value) && !/[:\x00-\x1f]/.test(value) && !value.split(/[/\\]/).includes('..');
@@ -157,17 +191,14 @@ export class GameContent {
       for (const name of names.filter(name => match.test(name))) if ((await fs.lstat(path.join(folder, name))).isFile()) { found = true; break; }
       if (!found) throw Error('A file group declared by the content layout is missing.');
     }
+    // The runtime reads metadata beside appxmanifest/layout. Preserve the
+    // extracted original and materialize only the fully validated config.
+    if (config.nested) await fs.writeFile(path.join(directory, 'MicrosoftGame.config'), config.xml, { mode: 0o600, flag: 'wx' });
     return content;
   }
-  async plan(game: Game, readAccess: () => Promise<{ checkedAt: string; accessByProductId: Access }>, market = 'US'): Promise<{ plan: GameContentPlan; packages: ContentPackage[] }> {
-    const base = await baseManifest(game);
-    if (!base.related.length) return { plan: { gameId: game.id, checkedAt: new Date().toISOString(), items: [] }, packages: [] };
-    const access = await readAccess();
-    const catalog: RecordValue = { Products: [] };
-    const ids = [...new Set([base.storeId, ...base.related])];
-    for (let offset = 0; offset < ids.length; offset += 20) {
+  private async catalogProducts(ids: string[], market: string): Promise<RecordValue[]> {
       const url = new URL('https://displaycatalog.mp.microsoft.com/v7.0/products');
-      url.search = new URLSearchParams({ bigIds: ids.slice(offset, offset + 20).join(','), market: /^[A-Z]{2}$/.test(market.toUpperCase()) ? market.toUpperCase() : 'US', languages: 'en-us,neutral' }).toString();
+      url.search = new URLSearchParams({ bigIds: ids.join(','), market: /^[A-Z]{2}$/.test(market.toUpperCase()) ? market.toUpperCase() : 'US', languages: 'en-us,neutral' }).toString();
       const response = await this.fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(20_000) });
       if (!response.ok) throw Error('Microsoft content metadata could not be loaded.');
       if (!response.body) throw Error('Content metadata response is empty.');
@@ -184,33 +215,79 @@ export class GameContent {
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
       const data = JSON.parse(text);
-      if (!Array.isArray(data.Products) || data.Products.length > 20 || data.Products.some((p: RecordValue) => !ids.slice(offset, offset + 20).includes(p?.ProductId))) throw Error('Unexpected content metadata.');
-      catalog.Products.push(...data.Products);
+      if (!Array.isArray(data.Products) || data.Products.length > 20 || new Set(data.Products.map((p: RecordValue) => p?.ProductId)).size !== data.Products.length
+        || data.Products.some((p: RecordValue) => !ids.includes(p?.ProductId))) throw Error('Unexpected content metadata.');
+      return data.Products;
+  }
+  async plan(game: Game, readAccess: () => Promise<{ checkedAt: string; accessByProductId: Access }>, market = 'US'): Promise<{ plan: GameContentPlan; packages: ContentPackage[] }> {
+    const base = await baseManifest(game);
+    const access = await readAccess();
+    return this.discover(base, access, market, await this.installedIds(game), game.id);
+  }
+  async preflight(id: string, readAccess: () => Promise<{ checkedAt: string; accessByProductId: Access }>, market = 'US'): Promise<{ plan: GameContentPlan; packages: ContentPackage[] }> {
+    if (!productId.test(id)) throw Error('Invalid Store product ID.');
+    const products = await this.catalogProducts([id], market);
+    const product = products[0];
+    const name = product?.Properties?.PackageIdentityName ?? packages(product ?? {})[0]?.PackageFamilyName?.split('_')[0];
+    if (product?.ProductType !== 'Game' || typeof name !== 'string' || !name) return { plan: { gameId: id, checkedAt: new Date().toISOString(), items: [] }, packages: [] };
+    const base: Manifest = { storeId: id, name, publisher: '', version: '0.0.0.0', related: [], allowed: [] };
+    return this.discover(base, await readAccess(), market, [], id, products);
+  }
+  private async discover(base: Manifest, access: { checkedAt: string; accessByProductId: Access }, market: string, installedIds: string[], gameId: string, baseProducts?: RecordValue[]): Promise<{ plan: GameContentPlan; packages: ContentPackage[] }> {
+    const ownedIds = Object.keys(access.accessByProductId);
+    if (ownedIds.length > 10_000 || ownedIds.some(id => !productId.test(id))) throw Error('Invalid content catalog.');
+    const declared = new Set([...base.related, ...installedIds]);
+    const catalog: RecordValue = { Products: baseProducts ?? await this.catalogProducts([base.storeId], market) };
+    const families = baseFamilies(base, catalog.Products[0]);
+    const ids = [...new Set([...declared, ...ownedIds])].filter(id => id !== base.storeId);
+    // Scan only authoritative license IDs and this game's managed records.
+    // Keep bounded metadata for matching PC DLC, not the whole account catalog.
+    for (let offset = 0; offset < ids.length; offset += 80) {
+      const batches = [];
+      for (let index = offset; index < Math.min(ids.length, offset + 80); index += 20) batches.push(ids.slice(index, index + 20));
+      const responses = await Promise.all(batches.map(batch => this.catalogProducts(batch, market)));
+      for (const product of responses.flat()) if (declared.has(product.ProductId) || (product.ProductType === 'Durable'
+        && packages(product).some(pkg => families.has(pkg.MainPackageFamilyNameForDlc)))) catalog.Products.push(product);
+      if (catalog.Products.length > 256) throw Error('Invalid content catalog.');
     }
-    const offers = contentOffers(base, catalog, access.accessByProductId);
-    const installed = new Set(await this.installedIds(game));
+    const offers = contentOffers({ ...base, related: [...declared] }, catalog, access.accessByProductId);
+    const installed = new Set(installedIds);
     for (const item of offers.items) if (installed.has(item.productId)) {
       item.status = 'installed'; item.note = item.access ? 'Installed. The runtime verifies the license when requested.' : 'Installed files retained, but no active account license was verified.';
     }
-    return { plan: { gameId: game.id, checkedAt: access.checkedAt, items: offers.items }, packages: offers.packages };
+    return { plan: { gameId, checkedAt: access.checkedAt, items: offers.items }, packages: offers.packages };
+  }
+  async remove(game: Game, id: string): Promise<void> {
+    const directory = await this.safeDirectory(game, id);
+    const base = await baseManifest(game);
+    const marker = JSON.parse(await boundedFile(path.join(directory, markerName)));
+    if (marker.schema !== 1 || marker.parent !== base.storeId || marker.productId !== id || !contentId.test(marker.contentId)) throw Error('Invalid content installation.');
+    // A completed managed record permits removal even if payload repair is
+    // needed. Only this game's exact managed directory is ever removed.
+    await fs.rm(directory, { recursive: true });
   }
   async prepare(game: Game, pkg: ContentPackage): Promise<string> {
     const base = await baseManifest(game);
-    if (!base.related.includes(pkg.productId) || !contentId.test(pkg.contentId)) throw Error('Invalid content installation.');
+    if (!productId.test(pkg.productId) || !contentId.test(pkg.contentId) || (!base.related.includes(pkg.productId)
+      && !(typeof pkg.mainFamily === 'string' && pkg.mainFamily.startsWith(base.name + '_') && /^[A-Za-z0-9._-]+$/.test(pkg.mainFamily)))) throw Error('Invalid content installation.');
     const directory = await this.safeDirectory(game, pkg.productId, true);
     await fs.unlink(path.join(directory, markerName)).catch(error => { if (error.code !== 'ENOENT') throw error; });
     return directory;
   }
   async complete(game: Game, pkg: ContentPackage): Promise<void> {
     const directory = await this.safeDirectory(game, pkg.productId);
-    const content = await this.validate(game, pkg.productId, directory, pkg.family);
+    const content = await this.validate(game, pkg.productId, directory, pkg.family, true);
     const temporary = path.join(directory, markerName + '.' + randomUUID() + '.tmp');
     await fs.writeFile(temporary, JSON.stringify({ schema: 1, productId: pkg.productId, contentId: pkg.contentId, parent: game.storeId, name: content.name, version: content.version }), { mode: 0o600, flag: 'wx' });
     await fs.rename(temporary, path.join(directory, markerName));
   }
   private async installedIds(game: Game): Promise<string[]> {
     const base = await baseManifest(game), installed: string[] = [];
-    for (const id of base.related) {
+    let names: string[];
+    try { names = await fs.readdir(await this.safeDirectory(game)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
+    if (names.length > 128) throw Error('Invalid content catalog.');
+    for (const id of names.filter(name => productId.test(name))) {
       try {
         const directory = await this.safeDirectory(game, id);
         const marker = JSON.parse(await boundedFile(path.join(directory, markerName)));

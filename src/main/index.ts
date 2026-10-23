@@ -465,6 +465,51 @@ async function startInstall(request: InstallRequest, updateGame?: Game): Promise
 }
 
 function contentManager(): GameContent { return new GameContent(path.dirname(store.settings.runtimeRoot)); }
+async function queueManagedContents(id: string, ids: string[], action: 'install' | 'repair' | 'remove' | 'download'): Promise<string[]> {
+    const selected = contentIds(ids);
+    if (!selected.length) throw Error('Select at least one content package.');
+    const manager = contentManager();
+    const { plan, packages } = await gameContent(id);
+    if (shutdownStarted) throw Error('The launcher is closing.');
+    if (action !== 'remove' && !plan.runtimeSupported) throw Error('Update the Nexus runtime in Settings to install and use related content.');
+    const game = store.games.find(entry => entry.id === id);
+    if (!game) throw Error('Game not found.');
+    for (const productId of selected) {
+      const item = plan.items.find(item => item.productId === productId);
+      if (!item || (action === 'remove' ? item.status !== 'installed' : !item.access || !packages.some(pkg => pkg.productId === productId)
+        || !(action === 'install' ? ['available'] : action === 'repair' ? ['installed'] : ['available', 'installed']).includes(item.status))) throw Error('No supported licensed content package was verified.');
+    }
+    if (action === 'remove') { for (const productId of selected) await manager.remove(game, productId); emitSnapshot(); return []; }
+    if (store.downloads.filter(task => ['queued', 'running', 'paused'].includes(task.status)).length + selected.length > 100) throw Error('The install queue is full. Cancel an installation before adding another.');
+    if (selected.some(productId => store.downloads.some(task => task.productId === productId && ['queued', 'running', 'paused'].includes(task.status)))) throw Error('This game is already in the install queue.');
+    // Downloads use the existing genuine license-checked backend, not catalog URLs.
+    requireBackend('streaming');
+    if (await backend.externalDownloadRunning()) throw Error('Another Xodus download is running.');
+    const release = installQueue.hold(), queued: string[] = [];
+    try {
+      for (const productId of selected) {
+        const pkg = packages.find(pkg => pkg.productId === productId)!;
+        const item = plan.items.find(item => item.productId === productId)!;
+        const destination = await manager.prepare(game, pkg);
+        queued.push(await prepareInstall({ productId, title: `${game.title}: ${item.title}`, destination }, undefined, { game, pkg, manager }));
+      }
+      return queued;
+    } finally { release(); }
+}
+async function installContentPreflight(productId: string) {
+  if (authState.running || authState.stored !== true) throw Error('Sign in before checking game content.');
+  const identity = `${authState.username}:${backend.current.binaryPath}:${currentMarket()}`;
+  accountLibrary.select(authState.username, backend.current.capabilities.library ? backend.current.binaryPath : undefined, currentMarket());
+  const result = await contentManager().preflight(productId, () => accountLibrary.access(true), currentMarket());
+  const wine = selectedWinePath(store.settings.winePath, store.settings.runtimeRoot, runtime.current.winePath);
+  result.plan.runtimeSupported = Boolean(wine && await storeContentRuntime(wine));
+  if (identity !== `${authState.username}:${backend.current.binaryPath}:${currentMarket()}` || authState.running || authState.stored !== true) throw Error('Account changed. Check content again.');
+  return result;
+}
+function contentIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 128 || value.some(id => typeof id !== 'string' || !/^[A-Z0-9]{12}$/.test(id)) || new Set(value).size !== value.length) throw Error('Invalid content installation.');
+  return [...value];
+}
 async function gameContent(id: string) {
   const game = store.games.find(entry => entry.id === id);
   if (!game) throw Error('Game not found.');
@@ -481,20 +526,7 @@ async function installGameContent(id: string, productId: string): Promise<string
   ensureIdle();
   preparingContent = true;
   try {
-    const manager = contentManager();
-    const { plan, packages } = await gameContent(id);
-    if (shutdownStarted) throw Error('The launcher is closing.');
-    if (!plan.runtimeSupported) throw Error('Update the Nexus runtime in Settings to install and use related content.');
-    const game = store.games.find(entry => entry.id === id);
-    const item = plan.items.find(item => item.productId === productId);
-    const pkg = packages.find(pkg => pkg.productId === productId);
-    if (!game || !item?.access || !pkg || !['available', 'installed'].includes(item.status)) throw Error('No supported licensed content package was verified.');
-    // Downloads use the existing genuine license-checked backend, not catalog URLs.
-    requireBackend('streaming');
-    if (await backend.externalDownloadRunning()) throw Error('Another Xodus download is running.');
-    const destination = await manager.prepare(game, pkg);
-    preparingInstall = true;
-    return await prepareInstall({ productId, title: `${game.title}: ${item.title}`, destination }, undefined, { game, pkg, manager });
+    return (await queueManagedContents(id, [productId], 'download'))[0];
   } finally { preparingContent = false; preparingInstall = false; }
 }
 
@@ -502,7 +534,9 @@ async function prepareInstall(request: InstallRequest, updateGame?: Game, conten
   const binary = requireBackend('streaming');
   const productId = safeProductId(request.productId);
   const market = currentMarket();
-  let selectedContentId: string | undefined;
+  const includedContent = contentIds(request.contentProductIds ?? []);
+  if (includedContent.length && (content || updateGame)) throw Error('Invalid content installation.');
+  let selectedContentId: string | undefined = content?.pkg.contentId;
   if (!content) {
     if (!backend.current.capabilities.packageSelection) throw Error('Update the Xodus backend in Settings before installing games.');
     if (request.selectionMarket !== undefined && request.selectionMarket !== market) throw Error('Store market changed. Choose the installation package again.');
@@ -513,6 +547,12 @@ async function prepareInstall(request: InstallRequest, updateGame?: Game, conten
       selectedContentId = request.selectedContentId;
     } else selectedContentId = installSelection(await readInstallPlan(binary, productId, market));
     if (binary !== backend.current.binaryPath || market !== currentMarket()) throw Error('Backend or Store market changed. Try installing again.');
+    if (includedContent.length) {
+      const selection = (await readInstallPlan(binary, productId, market)).choices.find(choice => choice.contentId === selectedContentId && choice.supported && choice.kind === 'Game');
+      if (!selection) throw Error('Invalid installation package selection.');
+      const preflight = await installContentPreflight(selection.productId);
+      if (!preflight.plan.runtimeSupported || includedContent.some(id => !preflight.packages.some(pkg => pkg.productId === id))) throw Error('No supported licensed content package was verified.');
+    }
   }
   const activeTasks = store.downloads.filter(task => ['running', 'queued', 'paused'].includes(task.status));
   if (activeTasks.length >= 100) throw Error('The install queue is full. Cancel an installation before adding another.');
@@ -544,6 +584,7 @@ async function prepareInstall(request: InstallRequest, updateGame?: Game, conten
     productId,
     selectedContentId,
     selectionMarket: selectedContentId ? market : undefined,
+    contentProductIds: includedContent.length ? includedContent : undefined,
     destination,
     status: 'queued',
     progress: null,
@@ -586,7 +627,7 @@ async function runDownload(task: DownloadTask, binary: string, market: string, u
   const controllable = structured && Boolean(backend.current.capabilities.streamingControls);
   if (!structured) task.log.push('Update the Nexus backend in Settings for numeric progress and Pause/Resume. This download can continue without them.');
   emitSnapshot();
-  const args = ['streaming', content?.pkg.contentId ?? productId, destination, '--parallel', String(store.settings.parallelDownloads)];
+  const args = ['streaming', productId, destination, '--parallel', String(store.settings.parallelDownloads)];
   args.push('--market', market);
   if (selectedContentId) args.push('--selected-content-id', selectedContentId);
   if (structured) args.push('--progress-json');
@@ -675,8 +716,17 @@ async function runDownload(task: DownloadTask, binary: string, market: string, u
           await store.patchGame(updateGame.id, { installState: inspected.installState, installMessage: inspected.installMessage, antiCheat: inspected.antiCheat, vcRedistEncrypted: inspected.vcRedistEncrypted, coverDataUrl: inspected.coverDataUrl, storeId: inspected.storeId ?? updateGame.storeId, installedVersion: inspected.installedVersion, packageName: inspected.packageName });
           delete gameUpdates[updateGame.id];
         }
-        else await store.upsertGame(inspected);
-      } catch { /* Some packages do not expose metadata yet. */ }
+        else {
+          const installed = await store.upsertGame(inspected);
+          if (task.contentProductIds?.length) {
+            try { preparingContent = true; await queueManagedContents(installed.id, task.contentProductIds, 'download'); }
+            catch (error) { task.error = `Game installed. DLC could not be queued: ${(error as Error).message}`; await store.updateDownload(id, task); }
+            finally { preparingContent = false; }
+          }
+        }
+      } catch (error) {
+        if (task.contentProductIds?.length) { task.error = `Game installed. DLC could not be queued: ${(error as Error).message}`; await store.updateDownload(id, task); }
+      }
     }
     if (task.status === 'complete') await downloadCleanup.complete(task);
     operations.delete(id);
@@ -1170,6 +1220,8 @@ function registerDemoIpc(catalogMarket: () => string): void {
   ipcMain.handle('start-install', () => 'demo-download');
   ipcMain.handle('install-plan', () => { throw Error('Package selection is unavailable in demo mode.'); });
   ipcMain.handle('game-content', (_event, id: string) => ({ gameId: id, checkedAt: new Date().toISOString(), items: [] }));
+  ipcMain.handle('install-content', () => { throw Error('Content planning is unavailable in demo mode.'); });
+  ipcMain.handle('manage-game-content', () => { throw Error('Content installation is unavailable in demo mode.'); });
   ipcMain.handle('install-game-content', () => { throw Error('Content installation is unavailable in demo mode.'); });
   ipcMain.handle('update-installed-game', (_event, id: string) => id);
   ipcMain.handle('cancel-download', () => {});
@@ -1315,6 +1367,13 @@ function registerIpc(): void {
     return plan;
   });
   ipcMain.handle('game-content', async (_event, id: string) => (await gameContent(id)).plan);
+  ipcMain.handle('install-content', async (_event, id: string) => (await installContentPreflight(id)).plan);
+  ipcMain.handle('manage-game-content', async (_event, id: string, ids: string[], action: string) => {
+    if (!['install', 'repair', 'remove'].includes(action)) throw Error('Invalid content installation.');
+    ensureIdle(); preparingContent = true;
+    try { await queueManagedContents(id, ids, action as 'install' | 'repair' | 'remove'); }
+    finally { preparingContent = false; }
+  });
   ipcMain.handle('install-game-content', (_event, id: string, productId: string) => installGameContent(id, productId));
   ipcMain.handle('update-installed-game', async (_event, id: string) => {
     const game = store.games.find((entry) => entry.id === id);
@@ -1350,7 +1409,7 @@ function registerIpc(): void {
           if (task.kind === 'content') {
             if (!task.gameId) throw Error('Content download has no parent game.');
             await installGameContent(task.gameId, task.productId);
-          } else await startInstall({ productId: task.productId, title: task.title, destination: task.destination, selectedContentId: task.selectedContentId, selectionMarket: task.selectionMarket }, game);
+          } else await startInstall({ productId: task.productId, title: task.title, destination: task.destination, selectedContentId: task.selectedContentId, selectionMarket: task.selectionMarket, contentProductIds: task.contentProductIds }, game);
           await store.removeDownload(id);
         } catch (error) { task.status = 'paused'; throw error; }
         finally { emitSnapshot(); }

@@ -1,3 +1,5 @@
+import { ContentList } from './ContentSelection';
+export { ContentList } from './ContentSelection';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDownToLine, Check, ChevronRight, CircleAlert, CircleUserRound,
@@ -513,37 +515,33 @@ function AccountGamesForUser(props: AccountGamesProps) {
   return <AccountGames key={`${data.auth.username}:${data.auth.stored}:${data.auth.running}:${data.settings.market}:${data.backend.binaryPath}`} {...props} />;
 }
 
-export function ContentList({ plan, disabled, pending, install }: { plan: GameContentPlan; disabled: boolean; pending?: string; install: (id: string) => void }) {
-  return <div className="content-list">{plan.items.length ? plan.items.map(item => <article key={item.productId}>
-    <div><strong title={item.title}>{item.title}</strong><small>{item.access === 'owned' ? 'Owned' : item.access === 'gamepass' ? 'Game Pass' : 'License not verified'} · {item.status === 'installed' ? 'Installed' : item.status === 'available' ? 'Not installed' : item.status === 'unsupported' ? 'Unsupported package' : 'Unavailable'}</small>
-      {item.downloadBytes ? <small>Download: {(item.downloadBytes / 1024 ** 2).toFixed(1)} MiB</small> : null}<small>{item.note}</small></div>
-    <button className="secondary" disabled={disabled || Boolean(pending) || !item.access || !['available', 'installed'].includes(item.status)} onClick={() => install(item.productId)}><Download />{pending === item.productId ? 'Preparing…' : item.status === 'installed' ? 'Repair' : 'Install'}</button>
-  </article>) : <p>No related content packages are declared by this game.</p>}</div>;
-}
-
 function GameContentDialog({ game, data, close, toast }: { game: Game; data: AppSnapshot; close: () => void; toast: (value: Toast) => void }) {
   const confirm = useConfirmation();
   const [plan, setPlan] = useState<GameContentPlan>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<string>();
+  const [selected, setSelected] = useState<string[]>([]);
   const [revision, setRevision] = useState(0);
   const queue = data.downloads.filter(task => task.kind === 'content' && task.gameId === game.id);
   const queueState = queue.map(task => task.id + ':' + task.status).join(',');
   const busy = data.downloads.some(task => ['running', 'paused', 'queued'].includes(task.status)) || Boolean(data.gameOperation && ['preparing', 'running', 'stopping'].includes(data.gameOperation.status));
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(undefined); setPlan(undefined);
+    setLoading(true); setError(undefined); setPlan(undefined); setSelected([]);
     window.launcher.getGameContent(game.id).then(value => { if (!cancelled) setPlan(value); })
       .catch(error => { if (!cancelled) setError(errorMessage(error)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [game.id, data.auth.username, data.auth.stored, data.auth.running, data.backend.binaryPath, data.settings.market, revision, queueState]);
-  async function install(id: string) {
-    const item = plan?.items.find(item => item.productId === id);
-    if (!item || !await confirm({ title: `${item.status === 'installed' ? 'Repair' : 'Install'} ${item.title}?`, message: 'This downloads licensed content into a separate managed folder. Close the game first.', confirmLabel: item.status === 'installed' ? 'Repair' : 'Install' })) return;
-    setPending(id); setError(undefined);
-    try { await window.launcher.installGameContent(game.id, id); toast({ kind: 'success', message: 'Content added to Install Queue.' }); }
+  const chosen = plan?.items.filter(item => selected.includes(item.productId)) ?? [];
+  async function manage(action: 'install' | 'repair' | 'remove') {
+    const ids = chosen.filter(item => item.status === (action === 'install' ? 'available' : 'installed')).map(item => item.productId);
+    const label = action === 'remove' ? 'Remove' : action === 'repair' ? 'Repair' : 'Install';
+    if (!ids.length || !await confirm({ title: action === 'remove' ? 'Remove selected DLC?' : action === 'repair' ? 'Repair selected DLC?' : 'Install selected DLC?',
+      message: action === 'remove' ? 'Only selected managed DLC files will be deleted. Close the game first.' : 'Selected licensed content will be added to Install Queue. Close the game first.', confirmLabel: label })) return;
+    setPending(action); setError(undefined);
+    try { await window.launcher.manageGameContent(game.id, ids, action); toast({ kind: 'success', message: action === 'remove' ? 'Selected content removed.' : 'Selected content added to Install Queue.' }); setRevision(value => value + 1); }
     catch (error) { setError(errorMessage(error)); }
     finally { setPending(undefined); }
   }
@@ -552,9 +550,12 @@ function GameContentDialog({ game, data, close, toast }: { game: Game; data: App
     {loading ? <p role="status"><LoaderCircle className="spin" />Checking account licenses and packages…</p> : null}
     {error ? <p role="alert" className="error-text">{error}</p> : null}
     {plan?.runtimeSupported === false ? <p className="error-text">Update the Nexus runtime in Settings before installing related content.</p> : null}
-    {plan && !loading ? <ContentList plan={plan} disabled={busy || !data.backend.capabilities.streaming || plan.runtimeSupported === false} pending={pending} install={id => { void install(id); }} /> : null}
+    {plan && !loading ? <ContentList plan={plan} disabled={busy || Boolean(pending)} selected={selected} change={setSelected} /> : null}
     {queue.some(task => ['running', 'paused', 'queued'].includes(task.status)) ? <p>Content download is in Install Queue. Pause, resume or cancel it there.</p> : null}
-    <div className="dialog-actions"><button className="secondary" disabled={loading || Boolean(pending)} onClick={() => setRevision(value => value + 1)}><RefreshCw />Refresh</button><button className="secondary" disabled={Boolean(pending)} data-gamepad-cancel onClick={close}>Close</button></div>
+    <div className="dialog-actions"><button className="secondary" disabled={loading || Boolean(pending)} onClick={() => setRevision(value => value + 1)}><RefreshCw />Refresh</button>
+      {plan?.items.some(item => item.access && item.status === 'available') ? <button className="primary" disabled={busy || loading || Boolean(pending) || plan.runtimeSupported === false || !data.backend.capabilities.streaming || !chosen.some(item => item.status === 'available')} onClick={() => void manage('install')}><Download />Install</button> : null}
+      {plan?.items.some(item => item.status === 'installed') ? <><button className="secondary" disabled={busy || loading || Boolean(pending) || plan.runtimeSupported === false || !chosen.some(item => item.status === 'installed' && item.access)} onClick={() => void manage('repair')}><RefreshCw />Repair</button><button className="danger" disabled={busy || loading || Boolean(pending) || !chosen.some(item => item.status === 'installed')} onClick={() => void manage('remove')}><Trash2 />Remove</button></> : null}
+      <button className="secondary" disabled={Boolean(pending)} data-gamepad-cancel onClick={close}>Close</button></div>
   </section></div>;
 }
 

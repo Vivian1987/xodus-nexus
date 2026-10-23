@@ -93,13 +93,22 @@ it('provides fresh access for content planning without loading unrelated catalog
   library.select(undefined,undefined,'US'); await expect(library.access()).rejects.toThrow('Sign in');
 });
 
-it('distinguishes direct/owned bundle access from subscriptions, without guessing missing parents',()=>{
+it('distinguishes owned bundle access from subscriptions even when the commercial parent is omitted',()=>{
   const {entries}=parseEntitlements(output([row(),row(B,{satisfiedByProductId:A}),row(C,{satisfiedByProductId:'CFQ7TTC0KGQ8'})]),'one@example.test','US');
   expect(entitlementKind(A,entries)).toBe('owned');
   expect(entitlementKind(B,entries)).toBe('owned');
   expect(entitlementKind(C,entries)).toBe('gamepass');
-  entries.delete(A); expect(entitlementKind(B,entries)).toBeUndefined();
+  entries.delete(A); expect(entitlementKind(B,entries)).toBe('owned');
+  entries.set(B,row(B,{satisfiedByProductId:'CFQ7UNKNOWN00'})); expect(entitlementKind(B,entries)).toBeUndefined();
+  entries.set(B,row(B,{satisfiedByProductId:A}));
   entries.set(A,row(A,{satisfiedByProductId:B})); expect(entitlementKind(B,entries)).toBeUndefined();
+});
+
+it('keeps active Persona premium DLC licenses whose satisfied-by bundle is absent from the response',async()=>{
+  const dlc=['9N17MLZ5JHGJ','9NBNSPC5ZBB7','9NLZX1XGWRDD','9NMVGJ6T8XC0','9NQT2TSTL016','9PDJN17WTFR0','9PPSRZPSCCQP'];
+  const library=new AccountLibrary(vi.fn(),async()=>output(dlc.map(id=>row(id,{satisfiedByProductId:'9NDGTQVVRSVS'}))));
+  library.select('one@example.test','/backend','US');
+  expect((await library.access()).accessByProductId).toEqual(Object.fromEntries(dlc.map(id=>[id,'owned'])));
 });
 
 it('never labels expired, trial, special, revoked or shared entitlements as owned',()=>{
