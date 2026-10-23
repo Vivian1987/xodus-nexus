@@ -50,7 +50,9 @@ export function parseEntitlements(output: string, account: string, market: strin
   return { checkedAt: result.checkedAt, entries, skipped };
 }
 
-/** Parent chains must themselves be licensed; unknown/trial/shared access is not ownership. */
+/** Active child rows are authoritative licenses. Satisfied-by is a fulfillment
+ * reference: commercial bundle parents need not appear in the same response.
+ */
 export function entitlementKind(productId: string, entries: Map<string, Entitlement>, now = Date.now(), visited = new Set<string>()): Exclude<Kind, 'all'> | undefined {
   if (visited.has(productId) || visited.size >= 16) return;
   const item = entries.get(productId);
@@ -59,6 +61,9 @@ export function entitlementKind(productId: string, entries: Map<string, Entitlem
   const parent = item.satisfiedByProductId;
   if (!parent) return plans.has(productId) ? undefined : 'owned';
   if (plans.has(parent)) return 'gamepass';
+  // Unknown subscription plans remain unclassified; a missing commercial
+  // bundle row must not erase the server's active, full child entitlement.
+  if (!entries.has(parent)) return parent.startsWith('CFQ') ? undefined : 'owned';
   return entitlementKind(parent, entries, now, new Set([...visited, productId]));
 }
 
